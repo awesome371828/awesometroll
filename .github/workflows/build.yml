@@ -20,14 +20,7 @@ jobs:
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install pyinstaller
-        pip install keyboard
-        pip install cryptography
-        pip install requests
-        pip install urllib3
-        pip install certifi
-        pip install charset-normalizer
-        pip install idna
+        pip install pyinstaller keyboard cryptography requests
     
     - name: Build EXE
       run: |
