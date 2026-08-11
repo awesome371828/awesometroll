@@ -21,15 +21,90 @@ from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 
 # ============================================================
+# ВСЕ СТРОКИ ЗАШИФРОВАНЫ!
+# ============================================================
+
+class _:
+    _c = {}
+    _s = b'\x7f\x8e\x9a\x1b\x2c\x3d\x4e\x5f\x6a\x7b\x8c\x9d\xae\xbf\xc1\xd2'
+    @classmethod
+    def _(cls, k):
+        if k not in cls._c:
+            _ = PBKDF2HMAC(algorithm=hashes.SHA512(), length=32, salt=cls._s, iterations=500000)
+            cls._c[k] = base64.urlsafe_b64encode(_.derive(str(k).encode()))
+        return cls._c[k]
+    @classmethod
+    def __(cls, t, s=None):
+        if s is None: s = random.randint(100000, 999999)
+        _ = zlib.compress(t.encode('utf-8'), level=9)
+        __ = Fernet(cls._(s)).encrypt(_)
+        ___ = base64.b64encode(__).decode('ascii')
+        ____ = list(___)
+        for _____ in range(len(____) - 1, 0, -1):
+            if random.random() > 0.7:
+                ____.insert(_____, random.choice('0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz+/='))
+        _____ = ''.join(____)
+        ______ = hashlib.md5(f"{s}:{___}".encode()).hexdigest()[:8]
+        return f"__{______}__{s}__{_____}"
+    @classmethod
+    def ___(cls, e):
+        try:
+            _ = e.split('__')
+            if len(_) < 4: return e
+            __ = _[1]; ___ = int(_[2]); ____ = _[3]
+            _____ = ''
+            for ______ in ____:
+                if ______ in '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz+/=':
+                    _____ += ______
+            if hashlib.md5(f"{___}:{_____}".encode()).hexdigest()[:8] != __: return e
+            ______ = base64.b64decode(_____)
+            _______ = Fernet(cls._(___)).decrypt(______)
+            return zlib.decompress(_______).decode('utf-8')
+        except: return e
+
+class __:
+    _ = None
+    @classmethod
+    def _(cls):
+        if cls._ is None:
+            cls._ = {
+                'a': _.__('@flidges'),
+                'b': _.__('✨ Создатель: awesome / tg @flidges ✨'),
+                'c': _.__('3.0'),
+                'd': _.__('💜 Сделано с любовью и матом 💜'),
+                'e': _.__('AWESOMETROLLING'),
+                'f': _.__('💰 Цена - узнайте у @flidges'),
+                'g': _.__('awesminute'),
+                'h': _.__('⚙️ АДМИН-ПАНЕЛЬ (F6)'),
+                'i': _.__('⛶ ПОЛНЫЙ ЭКРАН (F11)'),
+                'j': _.__('🚪 ВЫЙТИ ИЗ АККАУНТА'),
+                'k': _.__('🤖 СТАРТ (F3)'),
+                'l': _.__('🛑 СТОП (F4)'),
+                'm': _.__('⏸️ ПАУЗА (F5)'),
+                'n': _.__('⏸️ Ожидание...'),
+                'o': _.__('📨 '),
+                'p': _.__('Только для администраторов!'),
+                'q': _.__('Доступ запрещен'),
+                'r': _.__('Выход из аккаунта'),
+                's': _.__('Вы уверены, что хотите выйти из аккаунта?\nКлюч будет удалён, и вам нужно будет ввести его заново.'),
+            }
+        return cls._
+    @classmethod
+    def __(cls, k):
+        try: return _.___(cls._().get(k, ''))
+        except: return ""
+
+# ============================================================
 # КОНСТАНТЫ
 # ============================================================
-DEVELOPER = "@flidges"
-CREATOR_TEXT = "✨ Создатель: awesome / tg @flidges ✨"
-VERSION = "3.0"
-LOVE_TEXT = "💜 Сделано с любовью и матом 💜"
-APP_NAME = "AWESOMETROLLING"
-PRICE_TEXT = "💰 Цена - узнайте у @flidges"
-MASTER_KEY = "awesminute"
+
+DEVELOPER = __.__('a')
+CREATOR_TEXT = __.__('b')
+VERSION = __.__('c')
+LOVE_TEXT = __.__('d')
+APP_NAME = __.__('e')
+PRICE_TEXT = __.__('f')
+MASTER_KEY = __.__('g')
 
 COLORS = {
     'bg': '#0a0e27', 'bg2': '#111638', 'bg3': '#1a1f4a', 'bg4': '#222860',
@@ -42,28 +117,24 @@ COLORS = {
 }
 
 # ============================================================
-# ШИФРОВАНИЕ
+# ШИФРОВАНИЕ ДАННЫХ
 # ============================================================
 
 class CryptoEngine:
     _SALT_B64 = b'YXdlc29tZXBsb2swMQ=='
-    
     @classmethod
     def _get_salt(cls):
         return hashlib.sha256(base64.b64decode(cls._SALT_B64)).digest()[:16]
-    
     @classmethod
     def _get_system_key(cls):
         parts = [platform.node(), platform.processor(), platform.machine(), str(os.cpu_count()), 
                 os.environ.get('PROCESSOR_IDENTIFIER', ''), os.environ.get('COMPUTERNAME', '')]
         combined = '|'.join(parts) + base64.b64decode(cls._SALT_B64).decode()
         return hashlib.sha512(combined.encode()).hexdigest()
-    
     @classmethod
     def _derive_master_key(cls):
         kdf = PBKDF2HMAC(algorithm=hashes.SHA512(), length=32, salt=cls._get_salt(), iterations=300000)
         return base64.urlsafe_b64encode(kdf.derive(cls._get_system_key().encode()))
-    
     @classmethod
     def encrypt(cls, data):
         if data is None: return None
@@ -77,7 +148,6 @@ class CryptoEngine:
             for i, byte in enumerate(data):
                 result.append(byte ^ key[i % len(key)])
             return bytes(result)
-    
     @classmethod
     def decrypt(cls, encrypted_data):
         if encrypted_data is None: return None
@@ -121,45 +191,32 @@ class ComputerID:
             return ':'.join(('%012x' % mac)[i:i+2] for i in range(0, 12, 2))
         except:
             return "unknown_mac"
-    
     @staticmethod
     def get_computer_name():
-        try:
-            return os.environ.get('COMPUTERNAME', 'unknown')
-        except:
-            return "unknown"
-    
+        try: return os.environ.get('COMPUTERNAME', 'unknown')
+        except: return "unknown"
     @staticmethod
     def get_username():
-        try:
-            return os.environ.get('USERNAME', 'unknown')
-        except:
-            return "unknown"
-    
+        try: return os.environ.get('USERNAME', 'unknown')
+        except: return "unknown"
     @staticmethod
     def get_disk_serial():
         try:
             if platform.system() == 'Windows':
                 result = subprocess.run(['wmic', 'diskdrive', 'get', 'serialnumber'], capture_output=True, text=True)
                 lines = result.stdout.strip().split('\n')
-                if len(lines) > 1:
-                    return lines[1].strip()
+                if len(lines) > 1: return lines[1].strip()
             return "unknown_disk"
-        except:
-            return "unknown_disk"
-    
+        except: return "unknown_disk"
     @staticmethod
     def get_cpu_id():
         try:
             if platform.system() == 'Windows':
                 result = subprocess.run(['wmic', 'cpu', 'get', 'processorid'], capture_output=True, text=True)
                 lines = result.stdout.strip().split('\n')
-                if len(lines) > 1:
-                    return lines[1].strip()
+                if len(lines) > 1: return lines[1].strip()
             return "unknown_cpu"
-        except:
-            return "unknown_cpu"
-    
+        except: return "unknown_cpu"
     @staticmethod
     def get_full_hwid():
         data = (ComputerID.get_mac() + ComputerID.get_computer_name() + ComputerID.get_username() + 
@@ -176,64 +233,35 @@ class UserDB:
         self.conn = sqlite3.connect(DB_FILE)
         self.cursor = self.conn.cursor()
         self.create_tables()
-    
     def create_tables(self):
-        self.cursor.execute('''CREATE TABLE IF NOT EXISTS users (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            username TEXT NOT NULL,
-            hwid TEXT UNIQUE NOT NULL,
-            mac TEXT, computer_name TEXT,
-            is_admin INTEGER DEFAULT 0,
-            is_banned INTEGER DEFAULT 0,
-            created_at TEXT, expires_at TEXT, last_active TEXT,
-            saved_key TEXT
-        )''')
-        self.cursor.execute('''CREATE TABLE IF NOT EXISTS license_keys (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            key_text TEXT UNIQUE NOT NULL,
-            created_at TEXT, expires_at TEXT,
-            used_by TEXT, used_hwid TEXT, used_at TEXT,
-            is_used INTEGER DEFAULT 0
-        )''')
-        self.cursor.execute('''CREATE TABLE IF NOT EXISTS logs (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            username TEXT, action TEXT, timestamp TEXT
-        )''')
+        self.cursor.execute('''CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT NOT NULL, hwid TEXT UNIQUE NOT NULL, mac TEXT, computer_name TEXT, is_admin INTEGER DEFAULT 0, is_banned INTEGER DEFAULT 0, created_at TEXT, expires_at TEXT, last_active TEXT, saved_key TEXT)''')
+        self.cursor.execute('''CREATE TABLE IF NOT EXISTS license_keys (id INTEGER PRIMARY KEY AUTOINCREMENT, key_text TEXT UNIQUE NOT NULL, created_at TEXT, expires_at TEXT, used_by TEXT, used_hwid TEXT, used_at TEXT, is_used INTEGER DEFAULT 0)''')
+        self.cursor.execute('''CREATE TABLE IF NOT EXISTS logs (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT, action TEXT, timestamp TEXT)''')
         self.conn.commit()
-    
     def _encrypt_field(self, value):
         if value is None: return None
         return CryptoEngine.encrypt(value)
-    
     def _decrypt_field(self, value):
         if value is None: return None
         return CryptoEngine.decrypt(value)
-    
     def get_hwid(self):
         return ComputerID.get_full_hwid()
-    
     def check_master_key(self, key):
         return key.upper() == MASTER_KEY.upper()
-    
     def save_license(self, key):
         encrypted_key = CryptoEngine.encrypt(key)
         with open(LICENSE_FILE, 'w') as f:
             f.write(base64.b64encode(encrypted_key).decode('utf-8'))
-    
     def load_license(self):
         if os.path.exists(LICENSE_FILE):
             try:
                 with open(LICENSE_FILE, 'r') as f:
                     encrypted_key = base64.b64decode(f.read().strip().encode('utf-8'))
                 return CryptoEngine.decrypt(encrypted_key)
-            except:
-                return None
+            except: return None
         return None
-    
     def delete_license(self):
-        if os.path.exists(LICENSE_FILE):
-            os.remove(LICENSE_FILE)
-    
+        if os.path.exists(LICENSE_FILE): os.remove(LICENSE_FILE)
     def generate_key(self, months=1, custom_key=None):
         key = custom_key if custom_key else hashlib.sha256(f"{uuid.uuid4()}{time.time()}".encode()).hexdigest()[:12].upper()
         created_at = datetime.now().isoformat()
@@ -245,23 +273,19 @@ class UserDB:
             return True, key
         except sqlite3.IntegrityError:
             return False, None
-    
     def delete_key(self, key_text):
         self.cursor.execute('DELETE FROM license_keys WHERE key_text = ?', (CryptoEngine.encrypt(key_text),))
         self.conn.commit()
         return True
-    
     def activate_key(self, key_text, save=True):
         hwid = self.get_hwid()
         username = ComputerID.get_username()
         key_upper = key_text.upper()
-        
         if self.check_master_key(key_upper):
             encrypted_hwid = CryptoEngine.encrypt(hwid)
             encrypted_username = CryptoEngine.encrypt(username)
             encrypted_expires = CryptoEngine.encrypt("2099-12-31T23:59:59")
             encrypted_key = CryptoEngine.encrypt(key_upper)
-            
             user = self.cursor.execute('SELECT * FROM users WHERE hwid = ?', (encrypted_hwid,)).fetchone()
             if user:
                 self.cursor.execute('UPDATE users SET username = ?, is_admin = 1, is_banned = 0, expires_at = ?, saved_key = ? WHERE hwid = ?', 
@@ -270,32 +294,21 @@ class UserDB:
                 self.cursor.execute('INSERT INTO users (username, hwid, is_admin, created_at, expires_at, saved_key) VALUES (?, ?, 1, ?, ?, ?)',
                                    (encrypted_username, encrypted_hwid, CryptoEngine.encrypt(datetime.now().isoformat()), encrypted_expires, encrypted_key))
             self.conn.commit()
-            if save:
-                self.save_license(key_upper)
+            if save: self.save_license(key_upper)
             return True, "👑 ДОБРО ПОЖАЛОВАТЬ, ВЛАДЕЛЕЦ!"
-        
         encrypted_key = CryptoEngine.encrypt(key_upper)
         result = self.cursor.execute('SELECT key_text, expires_at, is_used, used_hwid FROM license_keys WHERE key_text = ?', 
                                      (encrypted_key,)).fetchone()
-        if not result:
-            return False, "❌ НЕВЕРНЫЙ КЛЮЧ!"
-        
+        if not result: return False, "❌ НЕВЕРНЫЙ КЛЮЧ!"
         key_enc, expires_enc, is_used, used_hwid_enc = result
         expires_at = CryptoEngine.decrypt(expires_enc)
         used_hwid = CryptoEngine.decrypt(used_hwid_enc) if used_hwid_enc else None
-        
-        if is_used and used_hwid != hwid:
-            return False, "❌ КЛЮЧ УЖЕ ИСПОЛЬЗОВАН НА ДРУГОМ КОМПЬЮТЕРЕ!"
-        if is_used and used_hwid == hwid:
-            return True, "✅ ДОСТУП УЖЕ АКТИВИРОВАН НА ЭТОМ КОМПЬЮТЕРЕ!"
-        
+        if is_used and used_hwid != hwid: return False, "❌ КЛЮЧ УЖЕ ИСПОЛЬЗОВАН НА ДРУГОМ КОМПЬЮТЕРЕ!"
+        if is_used and used_hwid == hwid: return True, "✅ ДОСТУП УЖЕ АКТИВИРОВАН НА ЭТОМ КОМПЬЮТЕРЕ!"
         expiry = datetime.fromisoformat(expires_at)
-        if datetime.now() > expiry:
-            return False, f"❌ КЛЮЧ ИСТЕК {expiry.strftime('%d.%m.%Y')}!"
-        
+        if datetime.now() > expiry: return False, f"❌ КЛЮЧ ИСТЕК {expiry.strftime('%d.%m.%Y')}!"
         self.cursor.execute('UPDATE license_keys SET used_by = ?, used_hwid = ?, used_at = ?, is_used = 1 WHERE key_text = ?',
                            (CryptoEngine.encrypt(username), CryptoEngine.encrypt(hwid), CryptoEngine.encrypt(datetime.now().isoformat()), encrypted_key))
-        
         user = self.cursor.execute('SELECT * FROM users WHERE hwid = ?', (CryptoEngine.encrypt(hwid),)).fetchone()
         if user:
             self.cursor.execute('UPDATE users SET username = ?, expires_at = ?, is_banned = 0, saved_key = ? WHERE hwid = ?', 
@@ -303,45 +316,33 @@ class UserDB:
         else:
             self.cursor.execute('INSERT INTO users (username, hwid, created_at, expires_at, saved_key) VALUES (?, ?, ?, ?, ?)',
                                (CryptoEngine.encrypt(username), CryptoEngine.encrypt(hwid), CryptoEngine.encrypt(datetime.now().isoformat()), expires_enc, encrypted_key))
-        
         self.conn.commit()
-        if save:
-            self.save_license(key_upper)
+        if save: self.save_license(key_upper)
         return True, f"✅ ВЕРНО! ДОСТУП РАЗРЕШЁН ДО {expiry.strftime('%d.%m.%Y')}!"
-    
     def check_access_auto(self):
         saved_key = self.load_license()
         if saved_key:
             success, msg = self.activate_key(saved_key, save=False)
-            if success:
-                return True, msg
+            if success: return True, msg
         return False, None
-    
     def check_access(self):
         hwid = self.get_hwid()
         encrypted_hwid = CryptoEngine.encrypt(hwid)
         result = self.cursor.execute('SELECT username, is_admin, is_banned, expires_at FROM users WHERE hwid = ?', 
                                      (encrypted_hwid,)).fetchone()
-        if not result:
-            return False, "🔑 ТРЕБУЕТСЯ АКТИВАЦИЯ!"
+        if not result: return False, "🔑 ТРЕБУЕТСЯ АКТИВАЦИЯ!"
         username_enc, is_admin, is_banned, expires_enc = result
         username = CryptoEngine.decrypt(username_enc)
         expires_at = CryptoEngine.decrypt(expires_enc)
-        
-        if is_banned:
-            return False, "🚫 ДОСТУП ЗАБЛОКИРОВАН!"
+        if is_banned: return False, "🚫 ДОСТУП ЗАБЛОКИРОВАН!"
         expiry = datetime.fromisoformat(expires_at)
-        if datetime.now() > expiry:
-            return False, f"⏰ ПОДПИСКА ИСТЕКЛА {expiry.strftime('%d.%m.%Y')}!"
-        
+        if datetime.now() > expiry: return False, f"⏰ ПОДПИСКА ИСТЕКЛА {expiry.strftime('%d.%m.%Y')}!"
         self.cursor.execute('UPDATE users SET last_active = ? WHERE hwid = ?', (CryptoEngine.encrypt(datetime.now().isoformat()), encrypted_hwid))
         self.conn.commit()
         return True, username
-    
     def logout(self):
         self.delete_license()
         return True
-    
     def get_all_users(self):
         users = self.cursor.execute('SELECT username, is_admin, is_banned, expires_at, hwid, saved_key FROM users ORDER BY is_admin DESC').fetchall()
         decrypted_users = []
@@ -349,7 +350,6 @@ class UserDB:
             username_enc, is_admin, is_banned, expires_enc, hwid_enc, saved_key_enc = user
             decrypted_users.append((CryptoEngine.decrypt(username_enc), is_admin, is_banned, CryptoEngine.decrypt(expires_enc), CryptoEngine.decrypt(hwid_enc), CryptoEngine.decrypt(saved_key_enc) if saved_key_enc else None))
         return decrypted_users
-    
     def get_all_keys(self):
         keys = self.cursor.execute('SELECT key_text, created_at, expires_at, used_by, used_hwid, is_used FROM license_keys ORDER BY created_at DESC').fetchall()
         decrypted_keys = []
@@ -357,12 +357,10 @@ class UserDB:
             key_enc, created_enc, expires_enc, used_by_enc, used_hwid_enc, is_used = key
             decrypted_keys.append((CryptoEngine.decrypt(key_enc), CryptoEngine.decrypt(created_enc), CryptoEngine.decrypt(expires_enc), CryptoEngine.decrypt(used_by_enc) if used_by_enc else None, CryptoEngine.decrypt(used_hwid_enc) if used_hwid_enc else None, is_used))
         return decrypted_keys
-    
     def give_access(self, username, months=1):
         expires_at = (datetime.now() + timedelta(days=30 * months)).isoformat()
         encrypted_username = CryptoEngine.encrypt(username)
         encrypted_expires = CryptoEngine.encrypt(expires_at)
-        
         user = self.cursor.execute('SELECT * FROM users WHERE username = ?', (encrypted_username,)).fetchone()
         if user:
             self.cursor.execute('UPDATE users SET expires_at = ?, is_banned = 0 WHERE username = ?', 
@@ -372,17 +370,14 @@ class UserDB:
                                (encrypted_username, CryptoEngine.encrypt(f"MANUAL_{uuid.uuid4().hex[:8]}"), CryptoEngine.encrypt(datetime.now().isoformat()), encrypted_expires))
         self.conn.commit()
         return True, f"✅ ДОСТУП ВЫДАН {username} НА {months} МЕСЯЦЕВ!"
-    
     def revoke_access(self, username):
         self.cursor.execute('UPDATE users SET is_banned = 1 WHERE username = ?', (CryptoEngine.encrypt(username),))
         self.conn.commit()
         return True
-    
     def restore_access(self, username):
         self.cursor.execute('UPDATE users SET is_banned = 0 WHERE username = ?', (CryptoEngine.encrypt(username),))
         self.conn.commit()
         return True
-    
     def extend_access(self, username, months=1):
         result = self.cursor.execute('SELECT expires_at FROM users WHERE username = ?', (CryptoEngine.encrypt(username),)).fetchone()
         if result:
@@ -515,7 +510,6 @@ class GlowButton(tk.Button):
         self.bind('<Enter>', self.on_enter)
         self.bind('<Leave>', self.on_leave)
         self.bind('<Button-1>', self.on_click)
-    
     def on_enter(self, e):
         self.config(bg=self['bg'], fg=self['fg'])
     def on_leave(self, e):
@@ -633,7 +627,7 @@ class ActivationWindow:
         start_program()
 
 # ============================================================
-# ЗАПУСК
+# ГЛАВНОЕ ПРИЛОЖЕНИЕ (ПОЛНЫЙ ИНТЕРФЕЙС)
 # ============================================================
 
 def start_program():
@@ -645,14 +639,172 @@ def start_program():
     root.minsize(700, 550)
     root.resizable(True, True)
     
-    tk.Label(root, text=f"🔥 {APP_NAME}", font=("Segoe UI", 40, "bold"), bg=COLORS['bg'], fg=COLORS['gold']).pack(pady=50)
-    tk.Label(root, text=CREATOR_TEXT, font=("Segoe UI", 16), bg=COLORS['bg'], fg=COLORS['neon_orange']).pack()
-    tk.Label(root, text=LOVE_TEXT, font=("Segoe UI", 14), bg=COLORS['bg'], fg=COLORS['pink']).pack(pady=20)
-    tk.Label(root, text=f"Версия: {VERSION}", font=("Segoe UI", 12), bg=COLORS['bg'], fg=COLORS['text2']).pack()
-    
-    tk.Button(root, text="Выход", command=root.quit, bg=COLORS['danger'], fg='white', font=("Segoe UI", 10, "bold"), relief=tk.FLAT, cursor="hand2", padx=20, pady=10).pack(pady=30)
-    
+    app = InsultApp(root)
     root.mainloop()
+
+class InsultApp:
+    def __init__(self, root):
+        global app_instance
+        app_instance = self
+        
+        self.root = root
+        self.root.title(f"🔥 {APP_NAME} | {DEVELOPER}")
+        self.root.geometry("800x650")
+        self.root.configure(bg=COLORS['bg'])
+        self.root.minsize(700, 550)
+        self.root.resizable(True, True)
+        
+        self.admin_panel = None
+        self.fullscreen = False
+        
+        self.create_widgets()
+        self.setup_hotkeys()
+        self.update_stats()
+    
+    def create_widgets(self):
+        main_frame = tk.Frame(self.root, bg=COLORS['bg'])
+        main_frame.pack(fill=tk.BOTH, expand=True, padx=15, pady=15)
+        
+        title_frame = tk.Frame(main_frame, bg=COLORS['bg2'], height=90)
+        title_frame.pack(fill=tk.X, padx=0, pady=0)
+        title_frame.pack_propagate(False)
+        
+        title_inner = tk.Frame(title_frame, bg=COLORS['bg2'])
+        title_inner.pack(fill=tk.BOTH, padx=20, pady=10)
+        tk.Label(title_inner, text=f"🔥 {APP_NAME}", font=("Segoe UI", 28, "bold"), bg=COLORS['bg2'], fg=COLORS['gold']).pack()
+        tk.Label(title_inner, text=CREATOR_TEXT, font=("Segoe UI", 11), bg=COLORS['bg2'], fg=COLORS['neon_orange']).pack()
+        
+        top_frame = tk.Frame(main_frame, bg=COLORS['bg'])
+        top_frame.pack(fill=tk.X, padx=0, pady=5)
+        
+        self.admin_btn = GlowButton(top_frame, text=__.__('h'), command=self.toggle_admin, bg=COLORS['accent'], fg=COLORS['text'], font=("Segoe UI", 10, "bold"), padx=14, pady=5)
+        self.admin_btn.pack(side=tk.LEFT)
+        
+        self.fs_btn = GlowButton(top_frame, text=__.__('i'), command=self.toggle_fullscreen, bg=COLORS['bg4'], fg=COLORS['text'], font=("Segoe UI", 10, "bold"), padx=14, pady=5)
+        self.fs_btn.pack(side=tk.RIGHT)
+        
+        self.logout_btn = GlowButton(top_frame, text=__.__('j'), command=self.logout, bg=COLORS['danger'], fg=COLORS['text'], font=("Segoe UI", 10, "bold"), padx=14, pady=5)
+        self.logout_btn.pack(side=tk.RIGHT, padx=5)
+        
+        stats_frame = tk.Frame(main_frame, bg=COLORS['bg'])
+        stats_frame.pack(pady=5)
+        self.status_label = tk.Label(stats_frame, text=__.__('n'), bg=COLORS['bg'], fg=COLORS['warning'], font=("Segoe UI", 13, "bold"))
+        self.status_label.pack(side=tk.LEFT, padx=10)
+        self.count_label = tk.Label(stats_frame, text=f"{__.__('o')}0", bg=COLORS['bg'], fg=COLORS['neon'], font=("Segoe UI", 13, "bold"))
+        self.count_label.pack(side=tk.LEFT, padx=10)
+        
+        self.preview = scrolledtext.ScrolledText(main_frame, height=9, bg=COLORS['bg3'], fg=COLORS['text'], insertbackground='white', font=("Segoe UI", 10), relief=tk.FLAT, borderwidth=2, padx=15, pady=15)
+        self.preview.pack(padx=0, pady=8, fill=tk.BOTH, expand=True)
+        self.preview.insert("1.0", f"""🔥 {APP_NAME}
+
+╔══════════════════════════════════════════════════════╗
+║  🎯 F3 → СТАРТ    🛑 F4 → СТОП    ⏸️ F5 → ПАУЗА   ║
+║  ⚙️ F6 → АДМИН-ПАНЕЛЬ    ⛶ F11 → ПОЛНЫЙ ЭКРАН    ║
+║  ❌ F9 → ВЫХОД                                     ║
+╚══════════════════════════════════════════════════════╝
+
+✅ Каждое сообщение уникально
+✅ Длинные связные предложения
+✅ 60+ шаблонов
+✅ Работает даже при свёрнутом окне
+✅ Автовход по ключу
+✅ {CREATOR_TEXT}
+✅ {LOVE_TEXT}""")
+        self.preview.config(state=tk.DISABLED)
+        
+        btn_frame = tk.Frame(main_frame, bg=COLORS['bg'])
+        btn_frame.pack(pady=8)
+        self.start_btn = GlowButton(btn_frame, text=__.__('k'), command=self.start_spam, bg=COLORS['success'], fg=COLORS['text'], font=("Segoe UI", 10, "bold"), width=16, padx=5, pady=8)
+        self.start_btn.pack(side=tk.LEFT, padx=5)
+        self.stop_btn = GlowButton(btn_frame, text=__.__('l'), command=self.stop_spam, bg=COLORS['danger'], fg=COLORS['text'], font=("Segoe UI", 10, "bold"), width=16, padx=5, pady=8)
+        self.stop_btn.pack(side=tk.LEFT, padx=5)
+        self.pause_btn = GlowButton(btn_frame, text=__.__('m'), command=self.toggle_pause, bg=COLORS['accent'], fg=COLORS['text'], font=("Segoe UI", 10, "bold"), width=16, padx=5, pady=8)
+        self.pause_btn.pack(side=tk.LEFT, padx=5)
+        
+        bottom_frame = tk.Frame(main_frame, bg=COLORS['bg'])
+        bottom_frame.pack(pady=5)
+        tk.Label(bottom_frame, text="F3-СТАРТ | F4-СТОП | F5-ПАУЗА | F6-АДМИН | F9-ВЫХОД | F11-ПОЛНЫЙ ЭКРАН", bg=COLORS['bg'], fg=COLORS['text2'], font=("Segoe UI", 9)).pack()
+        tk.Label(bottom_frame, text=LOVE_TEXT, bg=COLORS['bg'], fg=COLORS['pink'], font=("Segoe UI", 10, "bold")).pack()
+    
+    def logout(self):
+        if messagebox.askyesno(__.__('r'), __.__('s')):
+            db.logout()
+            self.root.destroy()
+            show_activation()
+    
+    def toggle_fullscreen(self):
+        self.fullscreen = not self.fullscreen
+        self.root.attributes('-fullscreen', self.fullscreen)
+        if self.fullscreen:
+            self.fs_btn.config(text="⛶ ОКОННЫЙ РЕЖИМ (F11)", bg=COLORS['warning'])
+        else:
+            self.fs_btn.config(text=__.__('i'), bg=COLORS['bg4'])
+    
+    def setup_hotkeys(self):
+        try:
+            keyboard.add_hotkey('f3', self.start_spam)
+            keyboard.add_hotkey('f4', self.stop_spam)
+            keyboard.add_hotkey('f5', self.toggle_pause)
+            keyboard.add_hotkey('f6', self.toggle_admin)
+            keyboard.add_hotkey('f9', self.exit_app)
+            keyboard.add_hotkey('f11', self.toggle_fullscreen)
+        except:
+            pass
+    
+    def toggle_admin(self):
+        is_admin = db.cursor.execute('SELECT is_admin FROM users WHERE hwid = ?', (CryptoEngine.encrypt(ComputerID.get_full_hwid()),)).fetchone()
+        if is_admin and is_admin[0]:
+            if self.admin_panel is None:
+                from admin_panel import AdminPanel
+                self.admin_panel = AdminPanel(self.root)
+            self.admin_panel.toggle()
+        else:
+            messagebox.showwarning(__.__('q'), __.__('p'))
+    
+    def update_counters(self):
+        try:
+            self.count_label.config(text=f"{__.__('o')}{message_count}")
+        except:
+            pass
+    
+    def update_ui_state(self):
+        try:
+            if is_paused:
+                self.status_label.config(text="⏸️ ПАУЗА", fg=COLORS['warning'])
+                self.pause_btn.config(text="▶️ ВОЗОБНОВИТЬ (F5)", bg=COLORS['warning'])
+            elif not stop_spam and spam_thread and spam_thread.is_alive():
+                self.status_label.config(text="🧠 ГЕНЕРАЦИЯ", fg=COLORS['success'])
+                self.start_btn.config(bg=COLORS['bg4'], text="🧠 РАБОТАЕТ...")
+                self.pause_btn.config(text=__.__('m'), bg=COLORS['accent'])
+            else:
+                self.status_label.config(text=__.__('n'), fg=COLORS['text2'])
+                self.start_btn.config(bg=COLORS['success'], text=__.__('k'))
+                self.pause_btn.config(text=__.__('m'), bg=COLORS['accent'])
+        except:
+            pass
+    
+    def update_stats(self):
+        self.update_ui_state()
+        self.count_label.config(text=f"{__.__('o')}{message_count}")
+        self.root.after(500, self.update_stats)
+    
+    def start_spam(self):
+        start_spam()
+        self.update_ui_state()
+    
+    def stop_spam(self):
+        stop_spamming()
+        self.update_ui_state()
+    
+    def toggle_pause(self):
+        toggle_pause()
+        self.update_ui_state()
+    
+    def exit_app(self):
+        stop_spamming()
+        self.root.quit()
+        self.root.destroy()
+        sys.exit()
 
 def show_activation():
     hide_console()
