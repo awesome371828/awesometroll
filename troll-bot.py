@@ -4,8 +4,9 @@ import sqlite3
 import random
 import string
 from datetime import datetime, timedelta
+from dateutil.relativedelta import relativedelta
 from aiogram import Bot, Dispatcher, types, F
-from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, FSInputFile
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
@@ -17,9 +18,16 @@ from aiogram.fsm.storage.memory import MemoryStorage
 BOT_TOKEN = "8935419647:AAEcZOioBC5QU4-TkLBXtO88BWNmjo_S73w"
 ADMIN_IDS = [6652898792]
 PRICE = 50
+ANTISPAM_SECONDS = 2
+BAN_MINUTES = 15
+
+# ССЫЛКИ
 PAYMENT_LINK = "https://yoomoney.ru/quickpay/fundraise/button?billNumber=1JJ662LM5S4.260811&"
-ANTISPAM_SECONDS = 2  # Защита от спама (секунды)
-BAN_MINUTES = 15  # Бан при отклонении оплаты
+DOWNLOAD_LINKS = {
+    "google": "https://drive.google.com/file/d/16-z26al_gb2uBI3ozBbnWIIqW9Dg92Hv/view?usp=sharing",
+    "yandex": "https://disk.yandex.ru/d/dtGhLWzdHDB6EA"
+}
+REVIEW_LINK = "https://www.youtube.com/watch?v=U5Vh9cGMRag"
 
 # ============================================================
 # БАЗА ДАННЫХ
@@ -74,7 +82,7 @@ def get_db():
 class LicenseStates(StatesGroup):
     waiting_for_license = State()
     waiting_for_keygen = State()
-    waiting_for_key_to_send = State()  # Новое состояние для ввода ключа
+    waiting_for_key_to_send = State()
 
 # ============================================================
 # БОТ
@@ -92,6 +100,8 @@ def main_keyboard():
         [InlineKeyboardButton(text="📦 Купить доступ (50₽/мес)", callback_data="buy")],
         [InlineKeyboardButton(text="🔑 Активировать ключ", callback_data="activate")],
         [InlineKeyboardButton(text="📊 Мой статус", callback_data="status")],
+        [InlineKeyboardButton(text="⬇️ Скачать", callback_data="download")],
+        [InlineKeyboardButton(text="📺 Обзор", url=REVIEW_LINK)],
         [InlineKeyboardButton(text="📩 Поддержка", url="https://t.me/flidges")],
         [InlineKeyboardButton(text="📝 О программе", callback_data="about")]
     ])
@@ -118,8 +128,15 @@ def payment_keyboard():
         [InlineKeyboardButton(text="⬅️ Назад", callback_data="menu")]
     ])
 
+def download_keyboard():
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="📥 Google Drive", url=DOWNLOAD_LINKS["google"])],
+        [InlineKeyboardButton(text="📥 Яндекс.Диск", url=DOWNLOAD_LINKS["yandex"])],
+        [InlineKeyboardButton(text="⬅️ Назад", callback_data="menu")]
+    ])
+
 # ============================================================
-# АНТИСПАМ
+# АНТИСПАМ И БАН
 # ============================================================
 async def check_antispam(user_id):
     conn = get_db()
@@ -139,9 +156,6 @@ async def check_antispam(user_id):
     conn.close()
     return True
 
-# ============================================================
-# ПРОВЕРКА БАНА
-# ============================================================
 async def is_user_banned(user_id):
     conn = get_db()
     c = conn.cursor()
@@ -154,7 +168,6 @@ async def is_user_banned(user_id):
         if datetime.now() < ban_until:
             return True, ban_until
         else:
-            # Снимаем бан
             conn = get_db()
             c = conn.cursor()
             c.execute('UPDATE users SET is_banned = 0, ban_until = NULL WHERE user_id = ?', (user_id,))
@@ -169,16 +182,13 @@ async def is_user_banned(user_id):
 async def start(message: types.Message):
     user_id = message.from_user.id
     
-    # Антиспам
     if not await check_antispam(user_id):
         return
     
-    # Проверка бана
     is_banned, ban_until = await is_user_banned(user_id)
     if is_banned:
         await message.answer(
             f"🚫 <b>Вы забанены до {ban_until.strftime('%d.%m.%Y %H:%M')}</b>\n\n"
-            f"Причина: Неподтверждённая оплата\n"
             f"📩 По вопросам: @flidges",
             parse_mode="HTML"
         )
@@ -217,7 +227,6 @@ async def start(message: types.Message):
 
 @dp.callback_query(F.data == "menu")
 async def menu(callback: types.CallbackQuery):
-    # Антиспам
     if not await check_antispam(callback.from_user.id):
         await callback.answer("⏳ Подождите немного!", show_alert=True)
         return
@@ -237,6 +246,29 @@ async def menu(callback: types.CallbackQuery):
         reply_markup=main_keyboard(),
         parse_mode="HTML"
     )
+    await callback.answer()
+
+@dp.callback_query(F.data == "download")
+async def download(callback: types.CallbackQuery):
+    if not await check_antispam(callback.from_user.id):
+        await callback.answer("⏳ Подождите немного!", show_alert=True)
+        return
+    
+    is_banned, _ = await is_user_banned(callback.from_user.id)
+    if is_banned:
+        await callback.answer("🚫 Вы забанены!", show_alert=True)
+        return
+    
+    text = """📥 <b>Скачать AWESOMETROLLING</b>
+
+Выберите удобный для вас способ скачивания:
+
+<b>Google Drive</b> — для пользователей Google
+<b>Яндекс.Диск</b> — для пользователей Яндекса
+
+Если ссылки не работают — напишите @flidges"""
+    
+    await callback.message.edit_text(text, reply_markup=download_keyboard(), parse_mode="HTML")
     await callback.answer()
 
 @dp.callback_query(F.data == "about")
@@ -262,10 +294,21 @@ async def about(callback: types.CallbackQuery):
 ✅ Защита HWID
 
 <b>Цена:</b> {PRICE}₽/месяц
-"""
-    await callback.message.edit_text(text, reply_markup=back_keyboard(), parse_mode="HTML")
+
+📺 <b>Обзор программы:</b>
+Смотрите видео-обзор по ссылке ниже!"""
+    
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="📺 Смотреть обзор", url=REVIEW_LINK)],
+        [InlineKeyboardButton(text="⬅️ Назад", callback_data="menu")]
+    ])
+    
+    await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
     await callback.answer()
 
+# ============================================================
+# ВСЕ ОСТАЛЬНЫЕ ФУНКЦИИ (status, buy, activate, admin и т.д.)
+# ============================================================
 @dp.callback_query(F.data == "buy")
 async def buy(callback: types.CallbackQuery):
     if not await check_antispam(callback.from_user.id):
@@ -362,7 +405,6 @@ async def payment_done(callback: types.CallbackQuery):
     username = callback.from_user.username or "без username"
     first_name = callback.from_user.first_name or "User"
     
-    # Отправляем уведомление админу с кнопками
     for admin_id in ADMIN_IDS:
         try:
             keyboard = InlineKeyboardMarkup(inline_keyboard=[
@@ -384,19 +426,17 @@ async def payment_done(callback: types.CallbackQuery):
         except:
             pass
     
-    # Ответ пользователю
     await callback.message.edit_text(
         "✅ <b>Спасибо! Ваша оплата отправлена на проверку.</b>\n\n"
         "⏳ Админ проверит оплату и выдаст ключ в ближайшее время.\n\n"
-        "📩 Обычно это занимает до 5-10 минут.\n\n"
-        "👨‍💻 Если задержка — напишите @flidges",
+        "📩 Если задержка — напишите @flidges",
         reply_markup=back_keyboard(),
         parse_mode="HTML"
     )
     await callback.answer()
 
 # ============================================================
-# ОБРАБОТКА КНОПОК АДМИНА
+# АДМИН: ПОДТВЕРЖДЕНИЕ/ОТКЛОНЕНИЕ
 # ============================================================
 @dp.callback_query(F.data.startswith("confirm_pay_"))
 async def confirm_payment(callback: types.CallbackQuery, state: FSMContext):
@@ -425,7 +465,6 @@ async def reject_payment(callback: types.CallbackQuery):
     
     user_id = int(callback.data.split("_")[2])
     
-    # Баним пользователя на 15 минут
     conn = get_db()
     c = conn.cursor()
     ban_until = (datetime.now() + timedelta(minutes=BAN_MINUTES)).isoformat()
@@ -433,7 +472,6 @@ async def reject_payment(callback: types.CallbackQuery):
     conn.commit()
     conn.close()
     
-    # Уведомляем пользователя
     try:
         await bot.send_message(
             user_id,
@@ -470,8 +508,7 @@ async def send_key_to_user(message: types.Message, state: FSMContext):
         await state.clear()
         return
     
-    # Сохраняем ключ в БД
-    expires_at = (datetime.now() + timedelta(days=30)).isoformat()
+    expires_at = (datetime.now() + relativedelta(months=1)).isoformat()
     
     conn = get_db()
     c = conn.cursor()
@@ -482,7 +519,6 @@ async def send_key_to_user(message: types.Message, state: FSMContext):
     conn.commit()
     conn.close()
     
-    # Отправляем ключ пользователю
     try:
         await bot.send_message(
             user_id,
@@ -490,7 +526,9 @@ async def send_key_to_user(message: types.Message, state: FSMContext):
             f"🔑 <b>Ваш ключ:</b> <code>{key}</code>\n"
             f"📅 <b>Действует до:</b> {datetime.fromisoformat(expires_at).strftime('%d.%m.%Y')}\n\n"
             f"⬇️ <b>Скачать программу:</b>\n"
-            f"📎 Свяжитесь с @flidges для получения EXE\n\n"
+            f"Google Drive: {DOWNLOAD_LINKS['google']}\n"
+            f"Яндекс.Диск: {DOWNLOAD_LINKS['yandex']}\n\n"
+            f"📺 <b>Обзор программы:</b>\n{REVIEW_LINK}\n\n"
             f"📩 При проблемах: @flidges",
             parse_mode="HTML"
         )
@@ -508,7 +546,58 @@ async def send_key_to_user(message: types.Message, state: FSMContext):
     await state.clear()
 
 # ============================================================
-# АКТИВАЦИЯ КЛЮЧА (для пользователей)
+# СТАТУС
+# ============================================================
+@dp.callback_query(F.data == "status")
+async def status(callback: types.CallbackQuery):
+    if not await check_antispam(callback.from_user.id):
+        await callback.answer("⏳ Подождите немного!", show_alert=True)
+        return
+    
+    is_banned, _ = await is_user_banned(callback.from_user.id)
+    if is_banned:
+        await callback.answer("🚫 Вы забанены!", show_alert=True)
+        return
+    
+    user_id = callback.from_user.id
+    conn = get_db()
+    c = conn.cursor()
+    c.execute('SELECT license_key, license_expires, is_activated FROM users WHERE user_id = ?', (user_id,))
+    result = c.fetchone()
+    conn.close()
+    
+    if result and result[2] and result[0]:
+        license_key, expires_at, is_activated = result
+        expiry = datetime.fromisoformat(expires_at)
+        
+        now = datetime.now()
+        if expiry > now:
+            diff = relativedelta(expiry, now)
+            if diff.months > 0:
+                if diff.days > 0:
+                    time_left = f"{diff.months} мес, {diff.days} дн"
+                else:
+                    time_left = f"{diff.months} мес"
+            elif diff.days > 0:
+                time_left = f"{diff.days} дн"
+            else:
+                time_left = "менее дня"
+        else:
+            time_left = "0"
+        
+        text = f"""📊 <b>Ваш статус:</b>
+
+✅ <b>Статус:</b> Активирован
+🔑 <b>Ключ:</b> <code>{license_key}</code>
+📅 <b>Действует до:</b> {expiry.strftime('%d.%m.%Y')}
+⏳ <b>Осталось:</b> {time_left}"""
+    else:
+        text = "❌ <b>У вас нет активной лицензии!</b>\n\nКупите доступ за 50₽/месяц через меню."
+    await callback.message.edit_text(text, reply_markup=back_keyboard(), parse_mode="HTML")
+    await callback.answer()
+
+# ============================================================
+# АКТИВАЦИЯ КЛЮЧА
 # ============================================================
 @dp.callback_query(F.data == "activate")
 async def activate_prompt(callback: types.CallbackQuery, state: FSMContext):
@@ -568,7 +657,8 @@ async def activate_license(message: types.Message, state: FSMContext):
             f"✅ <b>Ключ активирован!</b>\n\n"
             f"🔑 Ключ: <code>{key}</code>\n"
             f"📅 До: {expiry.strftime('%d.%m.%Y')}\n\n"
-            f"📎 Скачай программу у @flidges",
+            f"📎 Скачай программу: /download\n"
+            f"📺 Обзор: {REVIEW_LINK}",
             parse_mode="HTML",
             reply_markup=back_keyboard()
         )
@@ -578,39 +668,6 @@ async def activate_license(message: types.Message, state: FSMContext):
         await state.clear()
     
     conn.close()
-
-@dp.callback_query(F.data == "status")
-async def status(callback: types.CallbackQuery):
-    if not await check_antispam(callback.from_user.id):
-        await callback.answer("⏳ Подождите немного!", show_alert=True)
-        return
-    
-    is_banned, _ = await is_user_banned(callback.from_user.id)
-    if is_banned:
-        await callback.answer("🚫 Вы забанены!", show_alert=True)
-        return
-    
-    user_id = callback.from_user.id
-    conn = get_db()
-    c = conn.cursor()
-    c.execute('SELECT license_key, license_expires, is_activated FROM users WHERE user_id = ?', (user_id,))
-    result = c.fetchone()
-    conn.close()
-    
-    if result and result[2] and result[0]:
-        license_key, expires_at, is_activated = result
-        expiry = datetime.fromisoformat(expires_at)
-        days_left = (expiry - datetime.now()).days
-        text = f"""📊 <b>Ваш статус:</b>
-
-✅ <b>Статус:</b> Активирован
-🔑 <b>Ключ:</b> <code>{license_key}</code>
-📅 <b>Действует до:</b> {expiry.strftime('%d.%m.%Y')}
-⏳ <b>Дней осталось:</b> {days_left if days_left > 0 else 0}"""
-    else:
-        text = "❌ <b>У вас нет активной лицензии!</b>\n\nКупите доступ за 50₽/месяц через меню."
-    await callback.message.edit_text(text, reply_markup=back_keyboard(), parse_mode="HTML")
-    await callback.answer()
 
 # ============================================================
 # АДМИНКА
@@ -688,19 +745,19 @@ async def generate_key(message: types.Message, state: FSMContext):
         return
     
     key = ''.join(random.choices(string.ascii_uppercase + string.digits, k=12))
-    expires = (datetime.now() + timedelta(days=30*months)).isoformat()
+    expires_at = (datetime.now() + relativedelta(months=months)).isoformat()
     
     conn = get_db()
     c = conn.cursor()
     c.execute('INSERT INTO users (user_id, username, license_key, license_expires, created_at) VALUES (?, ?, ?, ?, ?)',
-             (message.from_user.id, "admin_gen", key, expires, datetime.now().isoformat()))
+             (message.from_user.id, "admin_gen", key, expires_at, datetime.now().isoformat()))
     c.execute('INSERT INTO logs (user_id, action, timestamp) VALUES (?, ?, ?)',
              (message.from_user.id, f"Сгенерирован ключ {key} на {months} мес", datetime.now().isoformat()))
     conn.commit()
     conn.close()
     
     await message.answer(
-        f"✅ <b>Ключ сгенерирован!</b>\n\n🔑 <code>{key}</code>\n📅 Действует: {months} месяцев\n📅 До: {datetime.fromisoformat(expires).strftime('%d.%m.%Y')}",
+        f"✅ <b>Ключ сгенерирован!</b>\n\n🔑 <code>{key}</code>\n📅 Действует: {months} месяцев\n📅 До: {datetime.fromisoformat(expires_at).strftime('%d.%m.%Y')}",
         parse_mode="HTML",
         reply_markup=admin_keyboard()
     )
@@ -760,8 +817,7 @@ async def main():
     print("🤖 БОТ ЗАПУЩЕН!")
     print(f"👨‍💻 АДМИН: {ADMIN_IDS}")
     print(f"💰 ЦЕНА: {PRICE}₽/месяц")
-    print(f"⏱ АНТИСПАМ: {ANTISPAM_SECONDS} сек")
-    print(f"🚫 БАН: {BAN_MINUTES} мин")
+    print(f"📺 ОБЗОР: {REVIEW_LINK}")
     print("=" * 40)
     await dp.start_polling(bot)
 
