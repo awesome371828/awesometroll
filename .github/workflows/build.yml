@@ -24,9 +24,9 @@ jobs:
     
     - name: Create empty database files
       run: |
-        echo. > troll_users.db
-        echo. > troll_settings.json
-        echo {} > troll_settings.json
+        New-Item -ItemType File -Path "troll_users.db" -Force
+        New-Item -ItemType File -Path "troll_settings.json" -Force
+        '{}' | Out-File -FilePath "troll_settings.json" -Encoding utf8
     
     - name: Build EXE
       run: |
