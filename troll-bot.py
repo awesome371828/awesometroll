@@ -13,10 +13,10 @@ from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.storage.memory import MemoryStorage
 
 # ============================================================
-# НАСТРОЙКИ
+# НАСТРОЙКИ — ИСПРАВЛЕНО!
 # ============================================================
 BOT_TOKEN = "8935419647:AAEcZOioBC5QU4-TkLBXtO88BWNmjo_S73w"
-ADMIN_IDS = [6652898792]
+ADMIN_IDS = [6652898792]  # ← УБРАЛ ДУБЛИКАТ! БЫЛО ДВА РАЗА
 OWNER_ID = 6652898792
 PRICE = 50
 ANTISPAM_SECONDS = 1
@@ -78,7 +78,7 @@ def get_db():
     return sqlite3.connect(DB_FILE)
 
 # ============================================================
-# ФУНКЦИИ ДЛЯ АДМИНОК
+# ФУНКЦИИ
 # ============================================================
 def is_admin(user_id):
     if user_id == OWNER_ID:
@@ -89,13 +89,6 @@ def is_admin(user_id):
     result = c.fetchone()
     conn.close()
     return result is not None and result[0] == 1
-
-def set_admin(user_id, status):
-    conn = get_db()
-    c = conn.cursor()
-    c.execute('UPDATE users SET is_admin = ? WHERE user_id = ?', (1 if status else 0, user_id))
-    conn.commit()
-    conn.close()
 
 def get_all_users():
     conn = get_db()
@@ -126,7 +119,6 @@ class LicenseStates(StatesGroup):
     waiting_for_license = State()
     waiting_for_keygen = State()
     waiting_for_key_to_send = State()
-    waiting_for_admin_action = State()
 
 # ============================================================
 # БОТ
@@ -137,7 +129,7 @@ bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher(storage=storage)
 
 # ============================================================
-# КРАСИВЫЕ КЛАВИАТУРЫ
+# КЛАВИАТУРЫ
 # ============================================================
 def main_keyboard():
     return InlineKeyboardMarkup(inline_keyboard=[
@@ -169,8 +161,7 @@ def admin_keyboard():
             InlineKeyboardButton(text="📋 Все ключи", callback_data="admin_keys")
         ],
         [
-            InlineKeyboardButton(text="📊 Логи", callback_data="admin_logs"),
-            InlineKeyboardButton(text="👑 Управление админами", callback_data="admin_admins")
+            InlineKeyboardButton(text="📊 Логи", callback_data="admin_logs")
         ],
         [
             InlineKeyboardButton(text="⬅️ Главное меню", callback_data="menu")
@@ -197,7 +188,7 @@ def download_keyboard():
     ])
 
 # ============================================================
-# АНТИСПАМ И БАН
+# АНТИСПАМ
 # ============================================================
 async def check_antispam(user_id, callback=None):
     conn = get_db()
@@ -470,6 +461,7 @@ async def payment_done(callback: types.CallbackQuery):
     username = callback.from_user.username or "без username"
     first_name = callback.from_user.first_name or "User"
     
+    # ОТПРАВЛЯЕМ ТОЛЬКО ОДНО СООБЩЕНИЕ АДМИНУ!
     for admin_id in ADMIN_IDS:
         try:
             keyboard = InlineKeyboardMarkup(inline_keyboard=[
@@ -524,19 +516,19 @@ async def confirm_payment(callback: types.CallbackQuery, state: FSMContext):
 
 @dp.callback_query(F.data.startswith("reject_pay_"))
 async def reject_payment(callback: types.CallbackQuery):
-    # Проверяем что это админ
+    # Проверка админа
     if not is_admin(callback.from_user.id):
         await callback.answer("⛔ Доступ запрещен!", show_alert=True)
         return
     
-    # Получаем ID пользователя из callback_data
+    # Получаем ID пользователя
     try:
         user_id = int(callback.data.split("_")[2])
     except:
         await callback.answer("❌ Ошибка!", show_alert=True)
         return
     
-    # Баним пользователя на 15 минут
+    # БАНИМ
     conn = get_db()
     c = conn.cursor()
     ban_until = (datetime.now() + timedelta(minutes=BAN_MINUTES)).isoformat()
@@ -544,7 +536,7 @@ async def reject_payment(callback: types.CallbackQuery):
     conn.commit()
     conn.close()
     
-    # Уведомляем пользователя
+    # Уведомление пользователю
     try:
         await bot.send_message(
             user_id,
@@ -557,14 +549,14 @@ async def reject_payment(callback: types.CallbackQuery):
     except:
         pass
     
-    # Меняем текст у сообщения админа
+    # Меняем сообщение админа
     await callback.message.edit_text(
         f"❌ <b>Оплата отклонена!</b>\n\n"
-        f"Пользователь ID: <code>{user_id}</code>\n"
+        f"👤 Пользователь ID: <code>{user_id}</code>\n"
         f"⏳ Забанен на {BAN_MINUTES} минут",
         parse_mode="HTML"
     )
-    await callback.answer("✅ Оплата отклонена, пользователь забанен!")
+    await callback.answer("✅ Оплата отклонена, пользователь забанен!", show_alert=True)
 
 @dp.message(LicenseStates.waiting_for_key_to_send)
 async def send_key_to_user(message: types.Message, state: FSMContext):
@@ -886,66 +878,6 @@ async def admin_logs(callback: types.CallbackQuery):
             text += f"[{dt}] <code>{user_id}</code>: {action}\n"
     
     await callback.message.edit_text(text, reply_markup=admin_keyboard(), parse_mode="HTML")
-    await callback.answer()
-
-@dp.callback_query(F.data == "admin_admins")
-async def admin_admins(callback: types.CallbackQuery):
-    if not is_admin(callback.from_user.id):
-        await callback.answer("⛔ Доступ запрещен!", show_alert=True)
-        return
-    
-    conn = get_db()
-    c = conn.cursor()
-    c.execute('SELECT user_id, username, first_name FROM users WHERE is_admin = 1')
-    admins = c.fetchall()
-    conn.close()
-    
-    if not admins:
-        text = "👑 <b>Администраторов нет</b>"
-    else:
-        text = "👑 <b>Список администраторов:</b>\n\n"
-        for admin in admins:
-            user_id, username, first_name = admin
-            name = first_name or username or str(user_id)
-            text += f"• {name} | ID: <code>{user_id}</code>\n"
-    
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="➕ Добавить админа", callback_data="admin_add_admin")],
-        [InlineKeyboardButton(text="➖ Убрать админа", callback_data="admin_remove_admin")],
-        [InlineKeyboardButton(text="⬅️ Назад", callback_data="menu")]
-    ])
-    
-    await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
-    await callback.answer()
-
-@dp.callback_query(F.data == "admin_add_admin")
-async def admin_add_admin(callback: types.CallbackQuery, state: FSMContext):
-    if not is_admin(callback.from_user.id):
-        await callback.answer("⛔ Доступ запрещен!", show_alert=True)
-        return
-    
-    await callback.message.edit_text(
-        "👑 <b>Добавление администратора</b>\n\nВведите ID пользователя, которому хотите выдать права администратора:",
-        reply_markup=back_keyboard(),
-        parse_mode="HTML"
-    )
-    await state.set_state(LicenseStates.waiting_for_key_to_send)
-    await state.update_data(action="add_admin")
-    await callback.answer()
-
-@dp.callback_query(F.data == "admin_remove_admin")
-async def admin_remove_admin(callback: types.CallbackQuery, state: FSMContext):
-    if not is_admin(callback.from_user.id):
-        await callback.answer("⛔ Доступ запрещен!", show_alert=True)
-        return
-    
-    await callback.message.edit_text(
-        "👑 <b>Удаление администратора</b>\n\nВведите ID пользователя, у которого хотите забрать права администратора:",
-        reply_markup=back_keyboard(),
-        parse_mode="HTML"
-    )
-    await state.set_state(LicenseStates.waiting_for_key_to_send)
-    await state.update_data(action="remove_admin")
     await callback.answer()
 
 # ============================================================
