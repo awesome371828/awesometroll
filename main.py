@@ -65,12 +65,14 @@ class CloudDB:
             return r.json() if r.ok else None
         except: return None
     @classmethod
-    def get_all_users(cls): return cls._request("GET", "users?order=id.desc")
+    def get_all_users(cls):
+        return cls._request("GET", "users?order=id.desc")
     @classmethod
     def insert_user(cls, username, hwid, expires_at, saved_key, is_owner=0, is_admin=0):
         return cls._request("POST", "users", {"username": username, "hwid": hwid, "is_owner": is_owner, "is_admin": is_admin, "expires_at": expires_at, "saved_key": saved_key})
     @classmethod
-    def get_all_keys(cls): return cls._request("GET", "license_keys?order=id.desc")
+    def get_all_keys(cls):
+        return cls._request("GET", "license_keys?order=id.desc")
     @classmethod
     def insert_key(cls, key_text, expires_at, owner_hwid):
         return cls._request("POST", "license_keys", {"key_text": key_text, "expires_at": expires_at, "owner_hwid": owner_hwid, "is_used": 0})
@@ -167,6 +169,7 @@ class UserDB:
         hwid = self.get_hwid()
         username = ComputerID.get_username()
         key_upper = key_text.upper()
+        
         if self.check_master_key(key_upper):
             encrypted_hwid = encrypt(hwid)
             encrypted_username = encrypt(username)
@@ -179,9 +182,15 @@ class UserDB:
                 self.cursor.execute('INSERT INTO users (username, hwid, is_owner, is_admin, created_at, expires_at, saved_key) VALUES (?, ?, 1, 1, ?, ?, ?)', (encrypted_username, encrypted_hwid, encrypt(datetime.now().isoformat()), encrypted_expires, encrypted_key))
             self.conn.commit()
             if save: self.save_license(key_upper)
-            try: CloudDB.insert_user(username, hwid, "2099-12-31T23:59:59", key_upper, 1, 1)
-            except: pass
+            
+            try:
+                CloudDB.insert_user(username, hwid, "2099-12-31T23:59:59", key_upper, 1, 1)
+                print(f"☁️ Овнер {username} сохранен в облако")
+            except Exception as e:
+                print(f"❌ Ошибка облака: {e}")
+            
             return True, "👑 ДОБРО ПОЖАЛОВАТЬ, ОВНЕР!"
+        
         encrypted_key = encrypt(key_upper)
         result = self.cursor.execute('SELECT key_text, expires_at, is_used, used_hwid, owner_hwid FROM license_keys WHERE key_text = ?', (encrypted_key,)).fetchone()
         if not result: return False, "❌ НЕВЕРНЫЙ КЛЮЧ!"
@@ -205,10 +214,14 @@ class UserDB:
             self.cursor.execute('INSERT INTO users (username, hwid, created_at, expires_at, saved_key) VALUES (?, ?, ?, ?, ?)', (encrypt(username), encrypt(hwid), encrypt(datetime.now().isoformat()), expires_enc, encrypted_key))
         self.conn.commit()
         if save: self.save_license(key_upper)
+        
         try:
             CloudDB.insert_user(username, hwid, expires_at, key_upper, 0, 0)
             CloudDB.activate_key_cloud(key_upper, username, hwid)
-        except: pass
+            print(f"☁️ Пользователь {username} сохранен в облако")
+        except Exception as e:
+            print(f"❌ Ошибка облака: {e}")
+        
         return True, f"✅ ВЕРНО! ДОСТУП ДО {expiry.strftime('%d.%m.%Y')}!"
     def check_access_auto(self):
         saved_key = self.load_license()
@@ -239,9 +252,20 @@ class UserDB:
             if cloud_users:
                 decrypted_users = []
                 for u in cloud_users:
-                    decrypted_users.append((u.get('username', ''), u.get('is_owner', 0), u.get('is_admin', 0), u.get('is_banned', 0), u.get('expires_at', ''), u.get('hwid', ''), u.get('saved_key', '')))
+                    decrypted_users.append((
+                        u.get('username', ''),
+                        u.get('is_owner', 0),
+                        u.get('is_admin', 0),
+                        u.get('is_banned', 0),
+                        u.get('expires_at', ''),
+                        u.get('hwid', ''),
+                        u.get('saved_key', '')
+                    ))
+                print(f"☁️ Загружено {len(decrypted_users)} пользователей из облака")
                 return decrypted_users
-        except: pass
+        except Exception as e:
+            print(f"❌ Ошибка загрузки из облака: {e}")
+        
         users = self.cursor.execute('SELECT username, is_owner, is_admin, is_banned, expires_at, hwid, saved_key FROM users ORDER BY is_owner DESC, is_admin DESC').fetchall()
         decrypted_users = []
         for user in users:
@@ -254,9 +278,20 @@ class UserDB:
             if cloud_keys:
                 decrypted_keys = []
                 for k in cloud_keys:
-                    decrypted_keys.append((k.get('key_text', ''), k.get('created_at', ''), k.get('expires_at', ''), k.get('used_by', ''), k.get('used_hwid', ''), k.get('is_used', 0), k.get('owner_hwid', '')))
+                    decrypted_keys.append((
+                        k.get('key_text', ''),
+                        k.get('created_at', ''),
+                        k.get('expires_at', ''),
+                        k.get('used_by', ''),
+                        k.get('used_hwid', ''),
+                        k.get('is_used', 0),
+                        k.get('owner_hwid', '')
+                    ))
+                print(f"☁️ Загружено {len(decrypted_keys)} ключей из облака")
                 return decrypted_keys
-        except: pass
+        except Exception as e:
+            print(f"❌ Ошибка загрузки ключей из облака: {e}")
+        
         keys = self.cursor.execute('SELECT key_text, created_at, expires_at, used_by, used_hwid, is_used, owner_hwid FROM license_keys ORDER BY created_at DESC').fetchall()
         decrypted_keys = []
         for key in keys:
