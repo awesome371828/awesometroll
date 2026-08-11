@@ -16,9 +16,95 @@ import platform
 from datetime import datetime, timedelta
 import ctypes
 import base64
+import requests
 from cryptography.fernet import Fernet
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
+
+# ============================================================
+# ПОДКЛЮЧЕНИЕ К SUPABASE (ОБЛАЧНАЯ БД)
+# ============================================================
+
+SUPABASE_URL = "https://yzhgcdnjuvfhcvwedgga.supabase.co"
+SUPABASE_KEY = "sb_publishable_jlEmP2OGria-IOzHlCHIZg_UNA3kFvB"
+
+class CloudDB:
+    """Облачная база данных Supabase"""
+    
+    @classmethod
+    def _request(cls, method, endpoint, data=None, params=None):
+        headers = {
+            "apikey": SUPABASE_KEY,
+            "Authorization": f"Bearer {SUPABASE_KEY}",
+            "Content-Type": "application/json"
+        }
+        url = f"{SUPABASE_URL}/rest/v1/{endpoint}"
+        
+        try:
+            if method == "GET":
+                response = requests.get(url, headers=headers, params=params)
+            elif method == "POST":
+                response = requests.post(url, headers=headers, json=data)
+            elif method == "PATCH":
+                response = requests.patch(url, headers=headers, json=data)
+            elif method == "DELETE":
+                response = requests.delete(url, headers=headers, params=params)
+            
+            if response.status_code in [200, 201, 204]:
+                return response.json() if response.text else True
+            else:
+                print(f"❌ Ошибка CloudDB: {response.status_code} - {response.text}")
+                return None
+        except Exception as e:
+            print(f"❌ Ошибка CloudDB: {e}")
+            return None
+    
+    @classmethod
+    def insert_user(cls, username, hwid, expires_at, saved_key, is_owner=0, is_admin=0):
+        data = {
+            "username": username,
+            "hwid": hwid,
+            "is_owner": is_owner,
+            "is_admin": is_admin,
+            "expires_at": expires_at,
+            "saved_key": saved_key
+        }
+        return cls._request("POST", "users", data)
+    
+    @classmethod
+    def get_all_users(cls):
+        result = cls._request("GET", "users?order=id.desc")
+        return result if result else []
+    
+    @classmethod
+    def get_user_by_hwid(cls, hwid):
+        result = cls._request("GET", f"users?hwid=eq.{hwid}")
+        return result[0] if result else None
+    
+    @classmethod
+    def insert_key(cls, key_text, expires_at, owner_hwid):
+        data = {
+            "key_text": key_text,
+            "expires_at": expires_at,
+            "owner_hwid": owner_hwid,
+            "is_used": 0
+        }
+        return cls._request("POST", "license_keys", data)
+    
+    @classmethod
+    def activate_key_cloud(cls, key_text, used_by, used_hwid):
+        data = {
+            "used_by": used_by,
+            "used_hwid": used_hwid,
+            "used_at": datetime.now().isoformat(),
+            "is_used": 1
+        }
+        return cls._request("PATCH", f"license_keys?key_text=eq.{key_text}", data)
+    
+    @classmethod
+    def get_all_keys(cls):
+        result = cls._request("GET", "license_keys?order=id.desc")
+        return result if result else []
 
 # ============================================================
 # СКРЫТИЕ КОНСОЛИ
@@ -180,7 +266,7 @@ class ComputerID:
         return hashlib.sha512(encrypted).hexdigest()[:64]
 
 # ============================================================
-# БАЗА ДАННЫХ
+# БАЗА ДАННЫХ (ЛОКАЛЬНАЯ + ОБЛАЧНАЯ)
 # ============================================================
 
 class UserDB:
@@ -265,9 +351,15 @@ class UserDB:
                 (CryptoEngine.encrypt(key), CryptoEngine.encrypt(created_at), 
                  CryptoEngine.encrypt(expires_at), CryptoEngine.encrypt(owner_hwid)))
             self.conn.commit()
-            return True, key
         except sqlite3.IntegrityError:
             return False, None
+        
+        try:
+            CloudDB.insert_key(key, expires_at, owner_hwid)
+        except Exception as e:
+            print(f"❌ Ошибка сохранения в облако: {e}")
+        
+        return True, key
     
     def delete_key(self, key_text):
         self.cursor.execute('DELETE FROM license_keys WHERE key_text = ?', (CryptoEngine.encrypt(key_text),))
@@ -301,6 +393,12 @@ class UserDB:
             self.conn.commit()
             if save:
                 self.save_license(key_upper)
+            
+            try:
+                CloudDB.insert_user(username, hwid, "2099-12-31T23:59:59", key_upper, 1, 1)
+            except Exception as e:
+                print(f"❌ Ошибка сохранения овнера: {e}")
+            
             return True, "👑 ДОБРО ПОЖАЛОВАТЬ, ОВНЕР!"
         
         encrypted_key = CryptoEngine.encrypt(key_upper)
@@ -353,6 +451,13 @@ class UserDB:
         self.conn.commit()
         if save:
             self.save_license(key_upper)
+        
+        try:
+            CloudDB.insert_user(username, hwid, expires_at, key_upper, 0, 0)
+            CloudDB.activate_key_cloud(key_upper, username, hwid)
+        except Exception as e:
+            print(f"❌ Ошибка сохранения в облако: {e}")
+        
         return True, f"✅ ВЕРНО! ДОСТУП ДО {expiry.strftime('%d.%m.%Y')}!"
     
     def check_access_auto(self):
@@ -393,6 +498,24 @@ class UserDB:
         return True
     
     def get_all_users(self):
+        try:
+            cloud_users = CloudDB.get_all_users()
+            if cloud_users:
+                decrypted_users = []
+                for u in cloud_users:
+                    decrypted_users.append((
+                        u.get('username', ''),
+                        u.get('is_owner', 0),
+                        u.get('is_admin', 0),
+                        u.get('is_banned', 0),
+                        u.get('expires_at', ''),
+                        u.get('hwid', ''),
+                        u.get('saved_key', '')
+                    ))
+                return decrypted_users
+        except Exception as e:
+            print(f"❌ Ошибка загрузки из облака: {e}")
+        
         users = self.cursor.execute('''SELECT username, is_owner, is_admin, is_banned, 
             expires_at, hwid, saved_key FROM users ORDER BY is_owner DESC, is_admin DESC''').fetchall()
         decrypted_users = []
@@ -410,6 +533,24 @@ class UserDB:
         return decrypted_users
     
     def get_all_keys(self):
+        try:
+            cloud_keys = CloudDB.get_all_keys()
+            if cloud_keys:
+                decrypted_keys = []
+                for k in cloud_keys:
+                    decrypted_keys.append((
+                        k.get('key_text', ''),
+                        k.get('created_at', ''),
+                        k.get('expires_at', ''),
+                        k.get('used_by', ''),
+                        k.get('used_hwid', ''),
+                        k.get('is_used', 0),
+                        k.get('owner_hwid', '')
+                    ))
+                return decrypted_keys
+        except Exception as e:
+            print(f"❌ Ошибка загрузки ключей из облака: {e}")
+        
         keys = self.cursor.execute('''SELECT key_text, created_at, expires_at, 
             used_by, used_hwid, is_used, owner_hwid 
             FROM license_keys ORDER BY created_at DESC''').fetchall()
@@ -639,8 +780,7 @@ class StarBackground:
             
             width = self.canvas.winfo_reqwidth() or 800
             height = self.canvas.winfo_reqheight() or 600
-            if star['x'] < 0: star['x'] = width
-            if star['x'] > width: star['x'] = 0
+            if star['x'] < 0: star['x'] = width            if star['x'] > width: star['x'] = 0
             if star['y'] < 0: star['y'] = height
             if star['y'] > height: star['y'] = 0
             
@@ -723,4 +863,836 @@ class ActivationWindow:
         contact_inner = tk.Frame(contact_frame, bg=COLORS['bg4'])
         contact_inner.pack(fill=tk.BOTH, padx=10, pady=5)
         
-        tk.Label(contact_inner, text="🔥 @flidges
+        tk.Label(contact_inner, text="🔥 @flidges 🔥", font=("Segoe UI", 16, "bold"), bg=COLORS['bg4'], fg=COLORS['gold']).pack(side=tk.LEFT)
+        tk.Label(contact_inner, text="📩 Telegram", font=("Segoe UI", 10), bg=COLORS['bg4'], fg=COLORS['neon_blue']).pack(side=tk.RIGHT)
+        
+        tk.Label(center_frame, text=PRICE_TEXT, font=("Segoe UI", 12, "bold"), bg=COLORS['bg2'], fg=COLORS['neon']).pack(pady=5)
+        
+        sep = tk.Frame(center_frame, bg=COLORS['text3'], height=1, width=300)
+        sep.pack(pady=10)
+        
+        key_frame = tk.Frame(center_frame, bg=COLORS['bg2'])
+        key_frame.pack(pady=10, fill=tk.X)
+        
+        tk.Label(key_frame, text="Или введите ключ активации:", bg=COLORS['bg2'], fg=COLORS['text2'], font=("Segoe UI", 10)).pack(anchor='w')
+        
+        entry_frame = tk.Frame(key_frame, bg=COLORS['bg2'])
+        entry_frame.pack(fill=tk.X, pady=5)
+        
+        self.key_entry = tk.Entry(entry_frame, bg=COLORS['bg3'], fg=COLORS['neon'], font=("Segoe UI", 14), relief=tk.FLAT, borderwidth=2, insertbackground=COLORS['text'])
+        self.key_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0,10))
+        self.key_entry.bind('<Return>', lambda e: self.activate())
+        
+        self.activate_btn = tk.Button(entry_frame, text="✅ АКТИВИРОВАТЬ", command=self.activate, bg=COLORS['gradient_start'], fg='white', font=("Segoe UI", 10, "bold"), relief=tk.FLAT, cursor="hand2", padx=15, pady=8)
+        self.activate_btn.pack(side=tk.RIGHT)
+        
+        self.status_frame = tk.Frame(center_frame, bg=COLORS['bg2'], height=50)
+        self.status_frame.pack(fill=tk.X, pady=5)
+        self.status_frame.pack_propagate(False)
+        
+        self.status_label = tk.Label(self.status_frame, text="", bg=COLORS['bg2'], fg=COLORS['danger'], font=("Segoe UI", 11, "bold"))
+        self.status_label.pack(fill=tk.BOTH, expand=True)
+        
+        footer = tk.Frame(main_frame, bg=COLORS['bg2'])
+        footer.pack(side=tk.BOTTOM, fill=tk.X, pady=10)
+        
+        tk.Label(footer, text=f"© 2026 {DEVELOPER} | Версия {VERSION}", bg=COLORS['bg2'], fg=COLORS['text3'], font=("Segoe UI", 8)).pack()
+        
+        self.window.mainloop()
+    
+    def activate(self):
+        key = self.key_entry.get().strip()
+        if not key:
+            self.status_label.config(text="❌ ВВЕДИТЕ КЛЮЧ!", fg=COLORS['danger'])
+            return
+        
+        success, msg = db.activate_key(key)
+        if success:
+            self.status_label.config(text="✅ " + msg, fg=COLORS['success'])
+            self.activate_btn.config(bg=COLORS['success'], text="✅ АКТИВИРОВАНО!")
+            self.window.after(1500, self.close_and_start)
+        else:
+            self.status_label.config(text="❌ " + msg, fg=COLORS['danger'])
+    
+    def close_and_start(self):
+        if self.stars:
+            self.stars.stop()
+        self.window.destroy()
+        start_program()
+
+# ============================================================
+# InsultApp
+# ============================================================
+
+class InsultApp:
+    def __init__(self, root):
+        global app_instance
+        app_instance = self
+        
+        self.root = root
+        self.root.title(f"🔥 {APP_NAME} | {DEVELOPER}")
+        self.root.geometry("900x700")
+        self.root.configure(bg=COLORS['bg'])
+        self.root.minsize(800, 650)
+        self.root.resizable(True, True)
+        
+        # Проверка админа
+        hwid = ComputerID.get_full_hwid()
+        self.is_admin = False
+        
+        saved_key = db.load_license()
+        if saved_key and db.check_master_key(saved_key):
+            self.is_admin = True
+        else:
+            user = db.cursor.execute('SELECT is_admin, is_owner FROM users WHERE hwid = ?', (CryptoEngine.encrypt(hwid),)).fetchone()
+            if user and (user[0] == 1 or user[1] == 1):
+                self.is_admin = True
+        
+        # Фон
+        self.canvas = tk.Canvas(self.root, bg=COLORS['bg'], highlightthickness=0)
+        self.canvas.pack(fill=tk.BOTH, expand=True)
+        self.stars = StarBackground(self.canvas, 200)
+        self.stars.update()
+        
+        # Фрейм
+        main_frame = tk.Frame(self.canvas, bg=COLORS['bg2'], bd=2, relief=tk.FLAT)
+        main_frame.place(relx=0.5, rely=0.5, anchor=tk.CENTER, width=860, height=660)
+        self.main_frame = main_frame
+        
+        # Заголовок
+        title_frame = tk.Frame(main_frame, bg=COLORS['bg2'], height=80)
+        title_frame.pack(fill=tk.X, padx=0, pady=0)
+        title_frame.pack_propagate(False)
+        
+        title_inner = tk.Frame(title_frame, bg=COLORS['bg2'])
+        title_inner.pack(fill=tk.BOTH, padx=20, pady=10)
+        tk.Label(title_inner, text=f"🔥 {APP_NAME}", font=("Segoe UI", 26, "bold"), bg=COLORS['bg2'], fg=COLORS['gold']).pack(side=tk.LEFT)
+        tk.Label(title_inner, text=CREATOR_TEXT, font=("Segoe UI", 10), bg=COLORS['bg2'], fg=COLORS['neon_orange']).pack(side=tk.RIGHT)
+        
+        # Верхняя панель
+        top_frame = tk.Frame(main_frame, bg=COLORS['bg'])
+        top_frame.pack(fill=tk.X, padx=0, pady=5)
+        
+        self.admin_btn = GlowButton(top_frame, text="⚙️ АДМИН-ПАНЕЛЬ (F6)", command=self.toggle_admin, bg=COLORS['accent'], fg=COLORS['text'], font=("Segoe UI", 10, "bold"), padx=14, pady=5)
+        self.admin_btn.pack(side=tk.LEFT, padx=5)
+        
+        self.fs_btn = GlowButton(top_frame, text="⛶ ПОЛНЫЙ ЭКРАН (F11)", command=self.toggle_fullscreen, bg=COLORS['bg4'], fg=COLORS['text'], font=("Segoe UI", 10, "bold"), padx=14, pady=5)
+        self.fs_btn.pack(side=tk.RIGHT, padx=5)
+        
+        self.logout_btn = GlowButton(top_frame, text="🚪 ВЫЙТИ (F9)", command=self.logout, bg=COLORS['danger'], fg=COLORS['text'], font=("Segoe UI", 10, "bold"), padx=14, pady=5)
+        self.logout_btn.pack(side=tk.RIGHT, padx=5)
+        
+        # Статус
+        stats_frame = tk.Frame(main_frame, bg=COLORS['bg'])
+        stats_frame.pack(pady=5)
+        self.status_label = tk.Label(stats_frame, text="⏸️ Ожидание...", bg=COLORS['bg'], fg=COLORS['warning'], font=("Segoe UI", 13, "bold"))
+        self.status_label.pack(side=tk.LEFT, padx=10)
+        self.count_label = tk.Label(stats_frame, text="📨 0", bg=COLORS['bg'], fg=COLORS['neon'], font=("Segoe UI", 13, "bold"))
+        self.count_label.pack(side=tk.LEFT, padx=10)
+        
+        # Превью
+        self.preview = scrolledtext.ScrolledText(main_frame, height=8, bg=COLORS['bg3'], fg=COLORS['text'], insertbackground='white', font=("Segoe UI", 10), relief=tk.FLAT, borderwidth=2, padx=15, pady=15)
+        self.preview.pack(padx=10, pady=5, fill=tk.BOTH, expand=True)
+        self.preview.insert("1.0", f"""🔥 {APP_NAME}
+
+╔══════════════════════════════════════════════════════════════╗
+║  🎯 F3 → СТАРТ    🛑 F4 → СТОП    ⏸️ F5 → ПАУЗА           ║
+║  ⚙️ F6 → АДМИН-ПАНЕЛЬ    ⛶ F11 → ПОЛНЫЙ ЭКРАН              ║
+║  ❌ F9 → ВЫХОД                                             ║
+╚══════════════════════════════════════════════════════════════╝
+
+✅ Каждое сообщение уникально
+✅ Длинные связные предложения
+✅ 60+ шаблонов
+✅ Работает даже при свёрнутом окне
+✅ Автовход по ключу
+✅ {CREATOR_TEXT}
+✅ {LOVE_TEXT}""")
+        self.preview.config(state=tk.DISABLED)
+        
+        # Кнопки
+        btn_frame = tk.Frame(main_frame, bg=COLORS['bg'])
+        btn_frame.pack(pady=8)
+        self.start_btn = GlowButton(btn_frame, text="🤖 СТАРТ (F3)", command=self.start_spam, bg=COLORS['success'], fg=COLORS['text'], font=("Segoe UI", 10, "bold"), width=16, padx=5, pady=8)
+        self.start_btn.pack(side=tk.LEFT, padx=5)
+        self.stop_btn = GlowButton(btn_frame, text="🛑 СТОП (F4)", command=self.stop_spam, bg=COLORS['danger'], fg=COLORS['text'], font=("Segoe UI", 10, "bold"), width=16, padx=5, pady=8)
+        self.stop_btn.pack(side=tk.LEFT, padx=5)
+        self.pause_btn = GlowButton(btn_frame, text="⏸️ ПАУЗА (F5)", command=self.toggle_pause, bg=COLORS['accent'], fg=COLORS['text'], font=("Segoe UI", 10, "bold"), width=16, padx=5, pady=8)
+        self.pause_btn.pack(side=tk.LEFT, padx=5)
+        
+        # Подвал
+        bottom_frame = tk.Frame(main_frame, bg=COLORS['bg'])
+        bottom_frame.pack(pady=5)
+        tk.Label(bottom_frame, text="F3-СТАРТ | F4-СТОП | F5-ПАУЗА | F6-АДМИН | F9-ВЫХОД | F11-ПОЛНЫЙ ЭКРАН", bg=COLORS['bg'], fg=COLORS['text2'], font=("Segoe UI", 9)).pack()
+        tk.Label(bottom_frame, text=LOVE_TEXT, bg=COLORS['bg'], fg=COLORS['pink'], font=("Segoe UI", 10, "bold")).pack()
+        
+        # Админ-панель
+        self.admin_panel = AdminPanel(self.root, self.is_admin)
+        self.fullscreen = False
+        
+        self.setup_hotkeys()
+        self.update_stats()
+    
+    def toggle_admin(self):
+        self.admin_panel.toggle()
+    
+    def toggle_fullscreen(self):
+        self.fullscreen = not self.fullscreen
+        self.root.attributes('-fullscreen', self.fullscreen)
+        if self.fullscreen:
+            self.fs_btn.config(text="⛶ ОКОННЫЙ РЕЖИМ (F11)", bg=COLORS['warning'])
+        else:
+            self.fs_btn.config(text="⛶ ПОЛНЫЙ ЭКРАН (F11)", bg=COLORS['bg4'])
+    
+    def setup_hotkeys(self):
+        try:
+            keyboard.add_hotkey('f3', self.start_spam)
+            keyboard.add_hotkey('f4', self.stop_spam)
+            keyboard.add_hotkey('f5', self.toggle_pause)
+            keyboard.add_hotkey('f6', self.toggle_admin)
+            keyboard.add_hotkey('f9', self.exit_app)
+            keyboard.add_hotkey('f11', self.toggle_fullscreen)
+        except:
+            pass
+    
+    def start_spam(self):
+        start_spam()
+        self.update_ui_state()
+    
+    def stop_spam(self):
+        stop_spamming()
+        self.update_ui_state()
+    
+    def toggle_pause(self):
+        toggle_pause()
+        self.update_ui_state()
+    
+    def logout(self):
+        if messagebox.askyesno("Выход из аккаунта", "Вы уверены, что хотите выйти?"):
+            db.logout()
+            if self.stars:
+                self.stars.stop()
+            self.root.destroy()
+            show_activation()
+    
+    def exit_app(self):
+        stop_spamming()
+        if self.stars:
+            self.stars.stop()
+        self.root.quit()
+        self.root.destroy()
+        sys.exit()
+    
+    def update_counters(self):
+        try:
+            self.count_label.config(text=f"📨 {message_count}")
+        except:
+            pass
+    
+    def update_ui_state(self):
+        try:
+            if is_paused:
+                self.status_label.config(text="⏸️ ПАУЗА", fg=COLORS['warning'])
+                self.pause_btn.config(text="▶️ ВОЗОБНОВИТЬ (F5)", bg=COLORS['warning'])
+            elif not stop_spam and spam_thread and spam_thread.is_alive():
+                self.status_label.config(text="🧠 ГЕНЕРАЦИЯ", fg=COLORS['success'])
+                self.start_btn.config(bg=COLORS['bg4'], text="🧠 РАБОТАЕТ...")
+                self.pause_btn.config(text="⏸️ ПАУЗА (F5)", bg=COLORS['accent'])
+            else:
+                self.status_label.config(text="⏸️ Остановлено", fg=COLORS['text2'])
+                self.start_btn.config(bg=COLORS['success'], text="🤖 СТАРТ (F3)")
+                self.pause_btn.config(text="⏸️ ПАУЗА (F5)", bg=COLORS['accent'])
+        except:
+            pass
+    
+    def update_stats(self):
+        self.update_ui_state()
+        self.count_label.config(text=f"📨 {message_count}")
+        self.root.after(500, self.update_stats)
+
+# ============================================================
+# AdminPanel
+# ============================================================
+
+class AdminPanel:
+    def __init__(self, parent, is_admin=False):
+        self.parent = parent
+        self.is_admin = is_admin
+        self.window = None
+        self.is_open = False
+        self._speed_update_timer = None
+        self.create_panel()
+    
+    def create_panel(self):
+        self.window = tk.Toplevel(self.parent)
+        self.window.title(f"✨ АДМИН-ПАНЕЛЬ | {APP_NAME}")
+        self.window.geometry("950x750")
+        self.window.configure(bg=COLORS['bg'])
+        self.window.minsize(850, 650)
+        self.window.protocol("WM_DELETE_WINDOW", self.hide)
+        self.window.bind('<Escape>', lambda e: self.hide())
+        self.window.withdraw()
+        
+        self.window.update_idletasks()
+        width = 950
+        height = 750
+        x = (self.window.winfo_screenwidth() // 2) - (width // 2)
+        y = (self.window.winfo_screenheight() // 2) - (height // 2)
+        self.window.geometry(f'{width}x{height}+{x}+{y}')
+        
+        canvas = tk.Canvas(self.window, bg=COLORS['bg'], highlightthickness=0)
+        canvas.pack(fill=tk.BOTH, expand=True)
+        
+        self.admin_stars = StarBackground(canvas, 100)
+        self.admin_stars.update()
+        
+        main_frame = tk.Frame(canvas, bg=COLORS['bg2'], bd=2, relief=tk.FLAT)
+        main_frame.place(relx=0.5, rely=0.5, anchor=tk.CENTER, width=910, height=710)
+        
+        title_frame = tk.Frame(main_frame, bg=COLORS['bg2'], height=60)
+        title_frame.pack(fill=tk.X, padx=0, pady=0)
+        title_frame.pack_propagate(False)
+        
+        title_inner = tk.Frame(title_frame, bg=COLORS['bg2'])
+        title_inner.pack(fill=tk.BOTH, padx=20, pady=10)
+        tk.Label(title_inner, text="✨ АДМИН-ПАНЕЛЬ", font=("Segoe UI", 22, "bold"), bg=COLORS['bg2'], fg=COLORS['gold']).pack(side=tk.LEFT)
+        tk.Label(title_inner, text=f"⭐ {DEVELOPER}", font=("Segoe UI", 12), bg=COLORS['bg2'], fg=COLORS['neon_orange']).pack(side=tk.RIGHT)
+        
+        sep = tk.Frame(main_frame, bg=COLORS['neon'], height=3)
+        sep.pack(fill=tk.X, padx=0)
+        
+        self.notebook = ttk.Notebook(main_frame)
+        self.notebook.pack(fill=tk.BOTH, expand=True, padx=15, pady=10)
+        
+        style = ttk.Style()
+        style.theme_use('clam')
+        style.configure('TNotebook', background=COLORS['bg'], borderwidth=0)
+        style.configure('TNotebook.Tab', background=COLORS['bg2'], foreground=COLORS['text'], padding=[20, 8], font=("Segoe UI", 10, "bold"))
+        style.map('TNotebook.Tab', background=[('selected', COLORS['accent'])])
+        
+        # Вкладки
+        self.tab_main = tk.Frame(self.notebook, bg=COLORS['bg'])
+        self.notebook.add(self.tab_main, text="📊 Главная")
+        self.create_main_tab()
+        
+        self.tab_about = tk.Frame(self.notebook, bg=COLORS['bg'])
+        self.notebook.add(self.tab_about, text="💜 О нас")
+        self.create_about_tab()
+        
+        if self.is_admin:
+            self.tab_users = tk.Frame(self.notebook, bg=COLORS['bg'])
+            self.notebook.add(self.tab_users, text="👥 Пользователи")
+            self.create_users_tab()
+            
+            self.tab_keys = tk.Frame(self.notebook, bg=COLORS['bg'])
+            self.notebook.add(self.tab_keys, text="🔑 Ключи")
+            self.create_keys_tab()
+            
+            self.tab_stats = tk.Frame(self.notebook, bg=COLORS['bg'])
+            self.notebook.add(self.tab_stats, text="📈 Статистика")
+            self.create_stats_tab()
+        
+        self.update_stats()
+    
+    def create_main_tab(self):
+        tab = self.tab_main
+        speed_frame = tk.Frame(tab, bg=COLORS['bg'])
+        speed_frame.pack(pady=10, padx=20, fill=tk.X)
+        tk.Label(speed_frame, text="🚀 Скорость отправки", font=("Segoe UI", 14, "bold"), bg=COLORS['bg'], fg=COLORS['accent2']).pack(anchor='w')
+        
+        speed_control = tk.Frame(speed_frame, bg=COLORS['bg'])
+        speed_control.pack(fill=tk.X, pady=5)
+        self.speed_slider = tk.Scale(speed_control, from_=0.001, to=0.45, resolution=0.001, orient=tk.HORIZONTAL, length=500,
+                                      bg=COLORS['bg'], fg=COLORS['text'], troughcolor=COLORS['bg3'], sliderlength=22, highlightthickness=0)
+        self.speed_slider.set(spam_speed)
+        self.speed_slider.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        self.speed_label = tk.Label(speed_control, text=f"{spam_speed:.3f}с", bg=COLORS['bg'], fg=COLORS['gold'], font=("Segoe UI", 18, "bold"), width=8)
+        self.speed_label.pack(side=tk.LEFT, padx=10)
+        
+        def update_speed(val):
+            val = float(val)
+            self.speed_label.config(text=f"{val:.3f}с")
+            if self._speed_update_timer:
+                self.window.after_cancel(self._speed_update_timer)
+            def apply_speed():
+                global spam_speed
+                spam_speed = val
+                settings['spam_speed'] = val
+                save_settings(settings)
+            self._speed_update_timer = self.window.after(300, apply_speed)
+        
+        self.speed_slider.config(command=update_speed)
+        
+        preset_frame = tk.Frame(tab, bg=COLORS['bg'])
+        preset_frame.pack(pady=5, padx=20, fill=tk.X)
+        tk.Label(preset_frame, text="⚡ Быстрые пресеты", font=("Segoe UI", 11, "bold"), bg=COLORS['bg'], fg=COLORS['text2']).pack(anchor='w')
+        preset_btns = tk.Frame(preset_frame, bg=COLORS['bg'])
+        preset_btns.pack(fill=tk.X, pady=5)
+        for name, speed in [("🐢 0.1с", 0.1), ("🚶 0.05с", 0.05), ("🏃 0.02с", 0.02), ("🚀 0.005с", 0.005), ("🔥 0.001с", 0.001)]:
+            btn = GlowButton(preset_btns, text=name, command=lambda s=speed: self.apply_preset(s), bg=COLORS['bg4'], fg=COLORS['text'], font=("Segoe UI", 9, "bold"), padx=14, pady=6)
+            btn.pack(side=tk.LEFT, padx=3)
+        
+        info_frame = tk.Frame(tab, bg=COLORS['bg'])
+        info_frame.pack(pady=15, padx=20, fill=tk.BOTH, expand=True)
+        tk.Label(info_frame, text="📊 Живая статистика", font=("Segoe UI", 14, "bold"), bg=COLORS['bg'], fg=COLORS['neon']).pack(anchor='w')
+        self.info_text = tk.Text(info_frame, height=8, bg=COLORS['bg2'], fg=COLORS['text'], font=("Consolas", 10), relief=tk.FLAT, borderwidth=2, padx=15, pady=12)
+        self.info_text.pack(fill=tk.BOTH, expand=True, pady=5)
+        self.info_text.insert("1.0", "⏳ Ожидание запуска...")
+        self.info_text.config(state=tk.DISABLED)
+        
+        btn_frame = tk.Frame(tab, bg=COLORS['bg'])
+        btn_frame.pack(pady=10)
+        for text, cmd in [("🔄 Обновить", self.update_info), ("🧹 Сбросить счётчик", self.reset_counters)]:
+            btn = GlowButton(btn_frame, text=text, command=cmd, bg=COLORS['bg3'], fg=COLORS['text'], font=("Segoe UI", 10, "bold"), padx=18, pady=6)
+            btn.pack(side=tk.LEFT, padx=5)
+    
+    def create_about_tab(self):
+        tab = self.tab_about
+        about_frame = tk.Frame(tab, bg=COLORS['bg'])
+        about_frame.pack(fill=tk.BOTH, expand=True, padx=40, pady=40)
+        
+        tk.Label(about_frame, text="🔥", font=("Segoe UI", 70), bg=COLORS['bg']).pack(pady=5)
+        tk.Label(about_frame, text=APP_NAME, font=("Segoe UI", 26, "bold"), bg=COLORS['bg'], fg=COLORS['gold']).pack(pady=5)
+        tk.Label(about_frame, text=f"✨ Версия {VERSION} ✨", font=("Segoe UI", 14), bg=COLORS['bg'], fg=COLORS['text2']).pack(pady=5)
+        
+        sep = tk.Frame(about_frame, bg=COLORS['neon'], height=2, width=350)
+        sep.pack(pady=15)
+        
+        tk.Label(about_frame, text="👨‍💻 РАЗРАБОТЧИК", font=("Segoe UI", 13, "bold"), bg=COLORS['bg'], fg=COLORS['text']).pack()
+        tk.Label(about_frame, text=DEVELOPER, font=("Segoe UI", 20, "bold"), bg=COLORS['bg'], fg=COLORS['pink']).pack(pady=3)
+        tk.Label(about_frame, text=CREATOR_TEXT, font=("Segoe UI", 12), bg=COLORS['bg'], fg=COLORS['gold']).pack(pady=5)
+        tk.Label(about_frame, text=PRICE_TEXT, font=("Segoe UI", 12, "bold"), bg=COLORS['bg'], fg=COLORS['neon']).pack(pady=5)
+        
+        sep2 = tk.Frame(about_frame, bg=COLORS['accent'], height=1, width=250)
+        sep2.pack(pady=10)
+        
+        for feat in ["🔥 Каждое сообщение уникально", "💎 Длинные связные предложения", "📚 60+ шаблонов", "⚡ Работает при свёрнутом окне", "🔒 Защита HWID", "💾 Автосохранение ключа"]:
+            tk.Label(about_frame, text=feat, font=("Segoe UI", 11), bg=COLORS['bg'], fg=COLORS['neon']).pack(pady=2)
+        
+        sep3 = tk.Frame(about_frame, bg=COLORS['accent'], height=1, width=200)
+        sep3.pack(pady=10)
+        tk.Label(about_frame, text=LOVE_TEXT, font=("Segoe UI", 14, "bold"), bg=COLORS['bg'], fg=COLORS['pink']).pack(pady=5)
+        tk.Label(about_frame, text="© 2026 Все права защищены 🚀", font=("Segoe UI", 9), bg=COLORS['bg'], fg=COLORS['text3']).pack(pady=5)
+    
+    def create_users_tab(self):
+        if not self.is_admin:
+            return
+        tab = self.tab_users
+        control_frame = tk.Frame(tab, bg=COLORS['bg'])
+        control_frame.pack(pady=10, padx=20, fill=tk.X)
+        tk.Label(control_frame, text="👥 Управление пользователями", font=("Segoe UI", 14, "bold"), bg=COLORS['bg'], fg=COLORS['gold']).pack(anchor='w')
+        
+        input_frame = tk.Frame(control_frame, bg=COLORS['bg'])
+        input_frame.pack(fill=tk.X, pady=5)
+        self.user_entry = tk.Entry(input_frame, bg=COLORS['bg3'], fg=COLORS['text'], font=("Segoe UI", 11), relief=tk.FLAT, borderwidth=2, width=20)
+        self.user_entry.pack(side=tk.LEFT, padx=5)
+        self.user_entry.insert(0, "Имя пользователя")
+        self.user_entry.bind('<FocusIn>', lambda e: self.user_entry.delete(0, tk.END))
+        
+        months_var = tk.StringVar(value="1")
+        months_menu = ttk.Combobox(input_frame, textvariable=months_var, values=["1", "3", "6", "12", "24"], width=5, state="readonly")
+        months_menu.pack(side=tk.LEFT, padx=5)
+        tk.Label(input_frame, text="мес.", bg=COLORS['bg'], fg=COLORS['text2']).pack(side=tk.LEFT)
+        
+        tk.Button(input_frame, text="✅ ВЫДАТЬ", command=lambda: self.give_access(months_var.get()), bg=COLORS['success'], fg='white', font=("Segoe UI", 9, "bold"), relief=tk.FLAT, cursor="hand2", padx=10, pady=5).pack(side=tk.LEFT, padx=5)
+        tk.Button(input_frame, text="🚫 ЗАБРАТЬ", command=self.revoke_access, bg=COLORS['danger'], fg='white', font=("Segoe UI", 9, "bold"), relief=tk.FLAT, cursor="hand2", padx=10, pady=5).pack(side=tk.LEFT, padx=5)
+        tk.Button(input_frame, text="🔄 ПРОДЛИТЬ", command=lambda: self.extend_access(months_var.get()), bg=COLORS['accent'], fg='white', font=("Segoe UI", 9, "bold"), relief=tk.FLAT, cursor="hand2", padx=10, pady=5).pack(side=tk.LEFT, padx=5)
+        
+        list_frame = tk.Frame(tab, bg=COLORS['bg'])
+        list_frame.pack(pady=10, padx=20, fill=tk.BOTH, expand=True)
+        columns = ("Имя", "Статус", "Бан", "До", "Ключ", "HWID")
+        self.tree = ttk.Treeview(list_frame, columns=columns, show="headings", height=12)
+        for col in columns:
+            self.tree.heading(col, text=col)
+            self.tree.column(col, width=100)
+        self.tree.column("HWID", width=120)
+        scrollbar = ttk.Scrollbar(list_frame, orient=tk.VERTICAL, command=self.tree.yview)
+        self.tree.configure(yscrollcommand=scrollbar.set)
+        self.tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        tk.Label(tab, text="💡 Двойной клик по пользователю → бан/разбан", bg=COLORS['bg'], fg=COLORS['text3'], font=("Segoe UI", 9)).pack(pady=5)
+        self.refresh_users()
+    
+    def create_keys_tab(self):
+        if not self.is_admin:
+            return
+        tab = self.tab_keys
+        control_frame = tk.Frame(tab, bg=COLORS['bg'])
+        control_frame.pack(pady=10, padx=20, fill=tk.X)
+        tk.Label(control_frame, text="🔑 Управление ключами", font=("Segoe UI", 14, "bold"), bg=COLORS['bg'], fg=COLORS['gold']).pack(anchor='w')
+        
+        add_frame = tk.Frame(control_frame, bg=COLORS['bg'])
+        add_frame.pack(fill=tk.X, pady=5)
+        
+        tk.Label(add_frame, text="Ключ:", bg=COLORS['bg'], fg=COLORS['text'], font=("Segoe UI", 10)).pack(side=tk.LEFT, padx=5)
+        self.key_entry = tk.Entry(add_frame, bg=COLORS['bg3'], fg=COLORS['text'], font=("Segoe UI", 11), relief=tk.FLAT, borderwidth=2, width=20)
+        self.key_entry.pack(side=tk.LEFT, padx=5)
+        self.key_entry.insert(0, "Введите ключ")
+        self.key_entry.bind('<FocusIn>', lambda e: self.key_entry.delete(0, tk.END) if self.key_entry.get() == "Введите ключ" else None)
+        
+        tk.Label(add_frame, text="мес:", bg=COLORS['bg'], fg=COLORS['text'], font=("Segoe UI", 10)).pack(side=tk.LEFT, padx=5)
+        self.key_months = ttk.Combobox(add_frame, values=["1", "3", "6", "12", "24"], width=5, state="readonly")
+        self.key_months.set("1")
+        self.key_months.pack(side=tk.LEFT, padx=5)
+        
+        tk.Button(add_frame, text="➕ ДОБАВИТЬ КЛЮЧ", command=self.add_key, bg=COLORS['success'], fg='white', font=("Segoe UI", 9, "bold"), relief=tk.FLAT, cursor="hand2", padx=10, pady=5).pack(side=tk.LEFT, padx=5)
+        tk.Button(add_frame, text="🎲 СГЕНЕРИРОВАТЬ", command=self.generate_key, bg=COLORS['accent'], fg='white', font=("Segoe UI", 9, "bold"), relief=tk.FLAT, cursor="hand2", padx=10, pady=5).pack(side=tk.LEFT, padx=5)
+        
+        list_frame = tk.Frame(tab, bg=COLORS['bg'])
+        list_frame.pack(pady=10, padx=20, fill=tk.BOTH, expand=True)
+        columns = ("Ключ", "Создан", "До", "Использован", "Кем", "HWID")
+        self.keys_tree = ttk.Treeview(list_frame, columns=columns, show="headings", height=10)
+        for col in columns:
+            self.keys_tree.heading(col, text=col)
+            self.keys_tree.column(col, width=100)
+        self.keys_tree.column("HWID", width=100)
+        scrollbar = ttk.Scrollbar(list_frame, orient=tk.VERTICAL, command=self.keys_tree.yview)
+        self.keys_tree.configure(yscrollcommand=scrollbar.set)
+        self.keys_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        
+        del_frame = tk.Frame(tab, bg=COLORS['bg'])
+        del_frame.pack(pady=5, padx=20, fill=tk.X)
+        tk.Button(del_frame, text="🗑 УДАЛИТЬ ВЫБРАННЫЙ КЛЮЧ", command=self.delete_key, bg=COLORS['danger'], fg='white', font=("Segoe UI", 9, "bold"), relief=tk.FLAT, cursor="hand2", padx=10, pady=5).pack(side=tk.LEFT)
+        tk.Label(del_frame, text="💡 Выберите ключ в списке и нажмите УДАЛИТЬ", bg=COLORS['bg'], fg=COLORS['text3'], font=("Segoe UI", 9)).pack(side=tk.LEFT, padx=10)
+        
+        self.refresh_keys()
+    
+    def create_stats_tab(self):
+        if not self.is_admin:
+            return
+        tab = self.tab_stats
+        stats_frame = tk.Frame(tab, bg=COLORS['bg'])
+        stats_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=20)
+        
+        tk.Label(stats_frame, text="📈 ДЕТАЛЬНАЯ СТАТИСТИКА", font=("Segoe UI", 18, "bold"), bg=COLORS['bg'], fg=COLORS['gold']).pack(pady=10)
+        self.stats_text = tk.Text(stats_frame, height=14, bg=COLORS['bg2'], fg=COLORS['text'], font=("Consolas", 11), relief=tk.FLAT, borderwidth=2, padx=20, pady=15)
+        self.stats_text.pack(fill=tk.BOTH, expand=True, pady=10)
+        self.stats_text.config(state=tk.DISABLED)
+        
+        btn_frame = tk.Frame(stats_frame, bg=COLORS['bg'])
+        btn_frame.pack(pady=10)
+        tk.Button(btn_frame, text="🔄 ОБНОВИТЬ", command=self.update_stats_display, bg=COLORS['accent'], fg='white', font=("Segoe UI", 10, "bold"), relief=tk.FLAT, cursor="hand2", padx=20, pady=8).pack()
+        self.update_stats_display()
+    
+    def refresh_users(self):
+        if not self.is_admin:
+            return
+        for item in self.tree.get_children():
+            self.tree.delete(item)
+        users = db.get_all_users()
+        for user in users:
+            username, is_owner, is_admin, is_banned, expires_at, hwid, saved_key = user
+            if expires_at:
+                try:
+                    expiry = datetime.fromisoformat(expires_at).strftime('%d.%m.%Y')
+                except:
+                    expiry = "Ошибка"
+            else:
+                expiry = "-"
+            status_text = "👑" if is_owner else ("⭐" if is_admin else "👤")
+            banned_text = "🚫" if is_banned else "✅"
+            hwid_short = hwid[:12] + "..." if hwid else "-"
+            key_short = saved_key[:8] + "..." if saved_key else "-"
+            self.tree.insert("", tk.END, values=(username, status_text, banned_text, expiry, key_short, hwid_short), tags=(username, is_banned))
+        self.tree.bind('<Double-Button-1>', self.on_user_click)
+    
+    def on_user_click(self, event):
+        if not self.is_admin:
+            return
+        selection = self.tree.selection()
+        if not selection:
+            return
+        item = selection[0]
+        values = self.tree.item(item, 'values')
+        username = values[0]
+        is_banned = values[2] == "🚫"
+        is_owner = values[1] == "👑"
+        if is_owner:
+            messagebox.showinfo("Инфо", "Нельзя изменять овнера!")
+            return
+        if is_banned:
+            if messagebox.askyesno("Восстановить", f"Разбанить {username}?"):
+                db.restore_access(username)
+                messagebox.showinfo("Успех", f"{username} разбанен!")
+                self.refresh_users()
+        else:
+            if messagebox.askyesno("Забанить", f"Забанить {username}?"):
+                db.revoke_access(username)
+                messagebox.showinfo("Успех", f"{username} забанен!")
+                self.refresh_users()
+    
+    def refresh_keys(self):
+        if not self.is_admin:
+            return
+        for item in self.keys_tree.get_children():
+            self.keys_tree.delete(item)
+        keys = db.get_all_keys()
+        for key in keys:
+            key_text, created_at, expires_at, used_by, used_hwid, is_used, owner_hwid = key
+            try:
+                created = datetime.fromisoformat(created_at).strftime('%d.%m') if created_at else "-"
+            except:
+                created = "-"
+            try:
+                expires = datetime.fromisoformat(expires_at).strftime('%d.%m.%Y') if expires_at else "-"
+            except:
+                expires = "-"
+            status = "✅" if is_used else "🔓"
+            used_by_text = used_by if used_by else "-"
+            used_hwid_short = used_hwid[:12] + "..." if used_hwid else "-"
+            self.keys_tree.insert("", tk.END, values=(key_text, created, expires, status, used_by_text, used_hwid_short))
+    
+    def update_stats_display(self):
+        if not self.is_admin:
+            return
+        users = db.get_all_users()
+        keys = db.get_all_keys()
+        text = f"""
+╔══════════════════════════════════════════════════════════════╗
+║                      📊 СТАТИСТИКА                          ║
+╠══════════════════════════════════════════════════════════════╣
+║  👥 Всего пользователей: {len(users):>4}                                     ║
+║  👑 Овнеров:             {sum(1 for u in users if u[1]):>4}                                     ║
+║  ⭐ Админов:             {sum(1 for u in users if u[2]):>4}                                     ║
+║  🚫 Забаненных:          {sum(1 for u in users if u[3]):>4}                                     ║
+║  ✅ Активных:            {sum(1 for u in users if not u[3]):>4}                                     ║
+╠══════════════════════════════════════════════════════════════╣
+║  🔑 Всего ключей:        {len(keys):>4}                                     ║
+║  ✅ Использованных:      {sum(1 for k in keys if k[5]):>4}                                     ║
+║  🔓 Свободных:           {len(keys) - sum(1 for k in keys if k[5]):>4}                                     ║
+╚══════════════════════════════════════════════════════════════╝
+"""
+        self.stats_text.config(state=tk.NORMAL)
+        self.stats_text.delete("1.0", tk.END)
+        self.stats_text.insert("1.0", text)
+        self.stats_text.config(state=tk.DISABLED)
+    
+    def update_info(self):
+        global message_count, total_messages_sent, start_time
+        uptime = "0с"
+        if start_time:
+            seconds = int(time.time() - start_time)
+            minutes = seconds // 60
+            seconds = seconds % 60
+            hours = minutes // 60
+            minutes = minutes % 60
+            if hours > 0:
+                uptime = f"{hours}ч {minutes}м {seconds}с"
+            elif minutes > 0:
+                uptime = f"{minutes}м {seconds}с"
+            else:
+                uptime = f"{seconds}с"
+        status = "⏸️ Остановлено"
+        if not stop_spam and spam_thread and spam_thread.is_alive():
+            if is_paused:
+                status = "⏸️ ПАУЗА"
+            else:
+                status = "🧠 АКТИВЕН"
+        info = f"""
+╔══════════════════════════════════════════════════════╗
+║  📊 СТАТИСТИКА              Статус: {status:<10} ║
+╠══════════════════════════════════════════════════════╣
+║  📨 За сессию: {message_count:>6}                                  ║
+║  📨 Всего:      {total_messages_sent:>6}                                  ║
+║  ⏱ Время:      {uptime:>10}                              ║
+║  🚀 Скорость:  {spam_speed:.3f}с                                   ║
+║  📝 Шаблонов:  {len(INSULT_TEMPLATES):>6}                                  ║
+║  🚫 Забанено:  {len(settings.get('banned_words', [])):>6}                                  ║
+║  ⭐ Dev:       {DEVELOPER}                              ║
+╚══════════════════════════════════════════════════════╝
+        """
+        self.info_text.config(state=tk.NORMAL)
+        self.info_text.delete("1.0", tk.END)
+        self.info_text.insert("1.0", info)
+        self.info_text.config(state=tk.DISABLED)
+    
+    def reset_counters(self):
+        global message_count, total_messages_sent
+        message_count = 0
+        total_messages_sent = 0
+        self.update_info()
+        messagebox.showinfo("✅ Сброшено", "Счётчики обнулены!")
+    
+    def update_stats(self):
+        self.update_info()
+        self.window.after(2000, self.update_stats)
+    
+    def apply_preset(self, speed):
+        global spam_speed
+        spam_speed = speed
+        self.speed_slider.set(speed)
+        self.speed_label.config(text=f"{speed:.3f}с")
+        settings['spam_speed'] = speed
+        save_settings(settings)
+    
+    def give_access(self, months):
+        if not self.is_admin:
+            messagebox.showwarning("Доступ запрещен", "Только для администраторов!")
+            return
+        username = self.user_entry.get().strip()
+        if not username or username == "Имя пользователя":
+            messagebox.showerror("Ошибка", "Введите имя пользователя!")
+            return
+        success, msg = db.give_access(username, int(months))
+        if success:
+            messagebox.showinfo("Успех", msg)
+            self.refresh_users()
+        else:
+            messagebox.showerror("Ошибка", msg)
+    
+    def revoke_access(self):
+        if not self.is_admin:
+            messagebox.showwarning("Доступ запрещен", "Только для администраторов!")
+            return
+        username = self.user_entry.get().strip()
+        if not username or username == "Имя пользователя":
+            messagebox.showerror("Ошибка", "Введите имя пользователя!")
+            return
+        if messagebox.askyesno("Подтверждение", f"Забрать доступ у {username}?"):
+            db.revoke_access(username)
+            messagebox.showinfo("Успех", f"Доступ у {username} забран!")
+            self.refresh_users()
+    
+    def extend_access(self, months):
+        if not self.is_admin:
+            messagebox.showwarning("Доступ запрещен", "Только для администраторов!")
+            return
+        username = self.user_entry.get().strip()
+        if not username or username == "Имя пользователя":
+            messagebox.showerror("Ошибка", "Введите имя пользователя!")
+            return
+        success, msg = db.extend_access(username, int(months))
+        if success:
+            messagebox.showinfo("Успех", msg)
+            self.refresh_users()
+        else:
+            messagebox.showerror("Ошибка", msg)
+    
+    def add_key(self):
+        if not self.is_admin:
+            messagebox.showwarning("Доступ запрещен", "Только для администраторов!")
+            return
+        key = self.key_entry.get().strip().upper()
+        months = int(self.key_months.get())
+        if not key or key == "ВВЕДИТЕ КЛЮЧ":
+            messagebox.showerror("Ошибка", "Введите ключ!")
+            return
+        success, result = db.generate_key(months, key)
+        if success:
+            messagebox.showinfo("Успех", f"🔑 Ключ {key} добавлен на {months} месяцев!")
+            self.refresh_keys()
+            self.key_entry.delete(0, tk.END)
+            self.key_entry.insert(0, "Введите ключ")
+        else:
+            messagebox.showerror("Ошибка", "Такой ключ уже существует!")
+    
+    def generate_key(self):
+        if not self.is_admin:
+            messagebox.showwarning("Доступ запрещен", "Только для администраторов!")
+            return
+        months = int(self.key_months.get())
+        success, key = db.generate_key(months)
+        if success:
+            messagebox.showinfo("Ключ сгенерирован", f"🔑 Ключ: {key}\n📅 Действует: {months} месяцев\n📩 Отправь его покупателю!\n⚠️ Ключ привяжется к первому компьютеру!")
+            self.refresh_keys()
+    
+    def delete_key(self):
+        if not self.is_admin:
+            messagebox.showwarning("Доступ запрещен", "Только для администраторов!")
+            return
+        selection = self.keys_tree.selection()
+        if not selection:
+            messagebox.showerror("Ошибка", "Выберите ключ для удаления!")
+            return
+        item = selection[0]
+        values = self.keys_tree.item(item, 'values')
+        key_text = values[0]
+        if messagebox.askyesno("Подтверждение", f"Удалить ключ {key_text}?"):
+            db.delete_key(key_text)
+            messagebox.showinfo("Успех", f"Ключ {key_text} удален!")
+            self.refresh_keys()
+    
+    def show(self):
+        if self.window:
+            self.window.deiconify()
+            self.window.lift()
+            self.is_open = True
+            self.update_stats()
+    
+    def hide(self):
+        if self.window:
+            self.window.withdraw()
+            self.is_open = False
+            if hasattr(self, 'admin_stars') and self.admin_stars:
+                self.admin_stars.stop()
+    
+    def toggle(self):
+        if self.is_open:
+            self.hide()
+        else:
+            self.show()
+
+# ============================================================
+# НАСТРОЙКИ
+# ============================================================
+
+def load_settings():
+    if os.path.exists(SETTINGS_FILE):
+        try:
+            with open(SETTINGS_FILE, 'r', encoding='utf-8') as f:
+                encrypted_data = json.load(f)
+                decrypted = {}
+                for key, value in encrypted_data.items():
+                    if isinstance(value, str):
+                        try:
+                            decrypted[key] = CryptoEngine.decrypt(value)
+                        except:
+                            decrypted[key] = value
+                    else:
+                        decrypted[key] = value
+                return decrypted
+        except:
+            return default_settings.copy()
+    return default_settings.copy()
+
+def save_settings(settings_data):
+    try:
+        encrypted_data = {}
+        for key, value in settings_data.items():
+            if isinstance(value, (str, int, float, bool)):
+                encrypted_data[key] = CryptoEngine.encrypt(str(value))
+            else:
+                encrypted_data[key] = value
+        with open(SETTINGS_FILE, 'w', encoding='utf-8') as f:
+            json.dump(encrypted_data, f, ensure_ascii=False, indent=2)
+    except:
+        pass
+
+default_settings = {
+    "spam_speed": 0.035,
+    "pause_between_messages": 0.01,
+    "banned_words": [],
+    "max_words_per_message": 50,
+    "min_words_per_message": 15
+}
+
+settings = load_settings()
+spam_speed = float(settings.get('spam_speed', 0.035))
+
+def show_activation():
+    hide_console()
+    ActivationWindow()
+
+if __name__ == "__main__":
+    hide_console()
+    
+    access, msg = db.check_access_auto()
+    if access:
+        start_program()
+    else:
+        access, msg = db.check_access()
+        if access:
+            start_program()
+        else:
+            show_activation()
