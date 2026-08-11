@@ -20,11 +20,13 @@ jobs:
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install pyinstaller
-        pip install keyboard
-        pip install cryptography
-        pip install tk
-        pip install pillow
+        pip install pyinstaller keyboard cryptography pillow
+    
+    - name: Create empty database files
+      run: |
+        echo. > troll_users.db
+        echo. > troll_settings.json
+        echo {} > troll_settings.json
     
     - name: Build EXE
       run: |
