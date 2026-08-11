@@ -44,13 +44,27 @@ PRICE_TEXT = "💰 Цена - узнайте у @flidges"
 MASTER_KEY = "awesminute"
 
 COLORS = {
-    'bg': '#0a0e27', 'bg2': '#111638', 'bg3': '#1a1f4a', 'bg4': '#222860',
-    'bg5': '#2d3570', 'gradient_start': '#6c5ce7', 'gradient_end': '#fd79a8',
-    'accent': '#6c5ce7', 'accent2': '#a29bfe', 'pink': '#fd79a8',
-    'text': '#dfe6e9', 'text2': '#b2bec3', 'text3': '#636e72',
-    'success': '#00b894', 'danger': '#e17055', 'warning': '#fdcb6e',
-    'gold': '#ffd700', 'neon': '#00ff88', 'neon_orange': '#ff6b35',
-    'neon_blue': '#4fc3f7', 'shadow': '#1a1f4a'
+    'bg': '#0a0e27',
+    'bg2': '#111638',
+    'bg3': '#1a1f4a',
+    'bg4': '#222860',
+    'bg5': '#2d3570',
+    'gradient_start': '#6c5ce7',
+    'gradient_end': '#fd79a8',
+    'accent': '#6c5ce7',
+    'accent2': '#a29bfe',
+    'pink': '#fd79a8',
+    'text': '#dfe6e9',
+    'text2': '#b2bec3',
+    'text3': '#636e72',
+    'success': '#00b894',
+    'danger': '#e17055',
+    'warning': '#fdcb6e',
+    'gold': '#ffd700',
+    'neon': '#00ff88',
+    'neon_orange': '#ff6b35',
+    'neon_blue': '#4fc3f7',
+    'shadow': '#1a1f4a'
 }
 
 # ============================================================
@@ -180,7 +194,7 @@ class ComputerID:
         return hashlib.sha512(encrypted).hexdigest()[:64]
 
 # ============================================================
-# БАЗА ДАННЫХ С ПРИВЯЗКОЙ К HWID
+# БАЗА ДАННЫХ
 # ============================================================
 
 class UserDB:
@@ -233,12 +247,6 @@ class UserDB:
     def check_master_key(self, key):
         return key.upper() == MASTER_KEY.upper()
     
-    def is_owner(self):
-        hwid = self.get_hwid()
-        encrypted_hwid = CryptoEngine.encrypt(hwid)
-        result = self.cursor.execute('SELECT is_owner FROM users WHERE hwid = ?', (encrypted_hwid,)).fetchone()
-        return result and result[0] == 1
-    
     def save_license(self, key):
         encrypted_key = CryptoEngine.encrypt(key)
         with open(LICENSE_FILE, 'w') as f:
@@ -285,7 +293,6 @@ class UserDB:
         username = ComputerID.get_username()
         key_upper = key_text.upper()
         
-        # === МАСТЕР-КЛЮЧ ===
         if self.check_master_key(key_upper):
             encrypted_hwid = CryptoEngine.encrypt(hwid)
             encrypted_username = CryptoEngine.encrypt(username)
@@ -310,7 +317,6 @@ class UserDB:
                 self.save_license(key_upper)
             return True, "👑 ДОБРО ПОЖАЛОВАТЬ, ОВНЕР!"
         
-        # === ОБЫЧНЫЙ КЛЮЧ ===
         encrypted_key = CryptoEngine.encrypt(key_upper)
         result = self.cursor.execute('''SELECT key_text, expires_at, is_used, used_hwid, owner_hwid 
             FROM license_keys WHERE key_text = ?''', (encrypted_key,)).fetchone()
@@ -323,11 +329,9 @@ class UserDB:
         used_hwid = CryptoEngine.decrypt(used_hwid_enc) if used_hwid_enc else None
         owner_hwid = CryptoEngine.decrypt(owner_hwid_enc) if owner_hwid_enc else None
         
-        # === ПРОВЕРКА ОВНЕРА ===
         if owner_hwid and owner_hwid != hwid:
             return False, "❌ ЭТОТ КЛЮЧ НЕ ДЛЯ ТВОЕГО КОМПЬЮТЕРА!"
         
-        # === ПРОВЕРКА ИСПОЛЬЗОВАНИЯ ===
         if is_used and used_hwid and used_hwid != hwid:
             return False, "❌ КЛЮЧ УЖЕ АКТИВИРОВАН НА ДРУГОМ КОМПЬЮТЕРЕ!"
         
@@ -337,12 +341,10 @@ class UserDB:
                 return False, f"❌ КЛЮЧ ИСТЕК {expiry.strftime('%d.%m.%Y')}!"
             return True, f"✅ ДОСТУП УЖЕ АКТИВИРОВАН ДО {expiry.strftime('%d.%m.%Y')}!"
         
-        # === ПРОВЕРКА СРОКА ===
         expiry = datetime.fromisoformat(expires_at)
         if datetime.now() > expiry:
             return False, f"❌ КЛЮЧ ИСТЕК {expiry.strftime('%d.%m.%Y')}!"
         
-        # === АКТИВАЦИЯ ===
         self.cursor.execute('''UPDATE license_keys SET 
             used_by = ?, used_hwid = ?, used_at = ?, is_used = 1 
             WHERE key_text = ?''',
@@ -480,7 +482,7 @@ class UserDB:
 db = UserDB()
 
 # ============================================================
-# ОСТАЛЬНОЙ КОД (Интерфейс, кнопки, спам и т.д.)
+# ШАБЛОНЫ
 # ============================================================
 
 INSULT_TEMPLATES = [
@@ -532,6 +534,10 @@ def generate_break_insult():
     if not words:
         words = ['ты', 'хуесос', 'блять']
     return words
+
+# ============================================================
+# АВТОСПАМ
+# ============================================================
 
 stop_spam = False
 spam_thread = None
@@ -616,6 +622,52 @@ class GlowButton(tk.Button):
         self.after(100, lambda: self.config(relief=tk.FLAT))
 
 # ============================================================
+# ЗВЕЗДЫ НА ФОНЕ
+# ============================================================
+
+class StarBackground:
+    def __init__(self, canvas, num_stars=100):
+        self.canvas = canvas
+        self.stars = []
+        self.running = True
+        
+        for _ in range(num_stars):
+            x = random.randint(0, canvas.winfo_reqwidth() or 800)
+            y = random.randint(0, canvas.winfo_reqheight() or 600)
+            size = random.randint(1, 3)
+            speed = random.uniform(0.02, 0.08)
+            alpha = random.uniform(0.3, 1.0)
+            self.stars.append({
+                'x': x, 'y': y, 'size': size, 'speed': speed, 'alpha': alpha,
+                'phase': random.uniform(0, 2 * 3.14159)
+            })
+    
+    def update(self):
+        if not self.running:
+            return
+        self.canvas.delete("star")
+        for star in self.stars:
+            star['phase'] += star['speed']
+            star['x'] += random.uniform(-0.2, 0.2)
+            star['y'] += random.uniform(-0.2, 0.2)
+            if star['x'] < 0: star['x'] = self.canvas.winfo_reqwidth() or 800
+            if star['x'] > (self.canvas.winfo_reqwidth() or 800): star['x'] = 0
+            if star['y'] < 0: star['y'] = self.canvas.winfo_reqheight() or 600
+            if star['y'] > (self.canvas.winfo_reqheight() or 600): star['y'] = 0
+            
+            alpha = int((0.5 + 0.5 * (star['alpha'] * star['phase'])) * 255)
+            color = f"#{alpha:02x}{alpha:02x}{255:02x}"
+            self.canvas.create_oval(
+                star['x'] - star['size'], star['y'] - star['size'],
+                star['x'] + star['size'], star['y'] + star['size'],
+                fill=color, outline="", tags="star"
+            )
+        self.canvas.after(100, self.update)
+    
+    def stop(self):
+        self.running = False
+
+# ============================================================
 # ОКНО АКТИВАЦИИ
 # ============================================================
 
@@ -623,23 +675,32 @@ class ActivationWindow:
     def __init__(self):
         self.window = tk.Tk()
         self.window.title(f"🔐 АКТИВАЦИЯ | {APP_NAME}")
-        self.window.geometry("600x580")
+        self.window.geometry("600x650")
         self.window.configure(bg=COLORS['bg'])
         self.window.resizable(False, False)
         self.window.protocol("WM_DELETE_WINDOW", sys.exit)
         
         self.window.update_idletasks()
         width = 600
-        height = 580
+        height = 650
         x = (self.window.winfo_screenwidth() // 2) - (width // 2)
         y = (self.window.winfo_screenheight() // 2) - (height // 2)
         self.window.geometry(f'{width}x{height}+{x}+{y}')
         
-        shadow = tk.Frame(self.window, bg=COLORS['shadow'], width=580, height=560)
-        shadow.place(x=10, y=10)
+        # Canvas для фона со звёздами
+        self.canvas = tk.Canvas(self.window, width=600, height=650, bg=COLORS['bg'], highlightthickness=0)
+        self.canvas.pack(fill=tk.BOTH, expand=True)
         
-        main_frame = tk.Frame(self.window, bg=COLORS['bg2'], width=580, height=560)
-        main_frame.place(x=10, y=10)
+        # Звезды
+        self.stars = StarBackground(self.canvas, 150)
+        self.stars.update()
+        
+        # Тень
+        shadow = tk.Frame(self.canvas, bg=COLORS['shadow'], width=580, height=600)
+        shadow.place(x=10, y=25)
+        
+        main_frame = tk.Frame(self.canvas, bg=COLORS['bg2'], width=580, height=600)
+        main_frame.place(x=10, y=25)
         
         grad = tk.Frame(main_frame, bg=COLORS['gradient_start'], height=4)
         grad.pack(fill=tk.X, padx=0, pady=0)
@@ -647,7 +708,7 @@ class ActivationWindow:
         header = tk.Frame(main_frame, bg=COLORS['bg2'])
         header.pack(fill=tk.X, padx=30, pady=(20,5))
         
-        tk.Label(header, text=f"🔥 {APP_NAME}", font=("Segoe UI", 22, "bold"), bg=COLORS['bg2'], fg=COLORS['gold']).pack()
+        tk.Label(header, text=f"🔥 {APP_NAME}", font=("Segoe UI", 26, "bold"), bg=COLORS['bg2'], fg=COLORS['gold']).pack()
         tk.Label(header, text="🔐 АКТИВАЦИЯ ПРОГРАММЫ", font=("Segoe UI", 12), bg=COLORS['bg2'], fg=COLORS['text2']).pack()
         
         info_frame = tk.Frame(main_frame, bg=COLORS['bg3'])
@@ -727,6 +788,8 @@ class ActivationWindow:
             self.status_label.config(text="❌ " + msg, fg=COLORS['danger'])
     
     def close_and_start(self):
+        if self.stars:
+            self.stars.stop()
         self.window.destroy()
         start_program()
 
@@ -738,14 +801,14 @@ def start_program():
     hide_console()
     root = tk.Tk()
     root.title(f"🔥 {APP_NAME} | {DEVELOPER}")
-    root.geometry("800x650")
+    root.geometry("900x700")
     root.configure(bg=COLORS['bg'])
-    root.minsize(700, 550)
+    root.minsize(800, 650)
     root.resizable(True, True)
     
     root.update_idletasks()
-    width = 800
-    height = 650
+    width = 900
+    height = 700
     x = (root.winfo_screenwidth() // 2) - (width // 2)
     y = (root.winfo_screenheight() // 2) - (height // 2)
     root.geometry(f'{width}x{height}+{x}+{y}')
@@ -760,9 +823,9 @@ class InsultApp:
         
         self.root = root
         self.root.title(f"🔥 {APP_NAME} | {DEVELOPER}")
-        self.root.geometry("800x650")
+        self.root.geometry("900x700")
         self.root.configure(bg=COLORS['bg'])
-        self.root.minsize(700, 550)
+        self.root.minsize(800, 650)
         self.root.resizable(True, True)
         
         # Проверяем админа
@@ -772,38 +835,43 @@ class InsultApp:
         if user and (user[0] == 1 or user[1] == 1):
             self.is_admin = True
         
-        self.admin_panel = AdminPanel(self.root, self.is_admin)
-        self.fullscreen = False
+        # Canvas для фона со звёздами
+        self.canvas = tk.Canvas(self.root, bg=COLORS['bg'], highlightthickness=0)
+        self.canvas.pack(fill=tk.BOTH, expand=True)
         
-        self.create_widgets()
-        self.setup_hotkeys()
-        self.update_stats()
-    
-    def create_widgets(self):
-        main_frame = tk.Frame(self.root, bg=COLORS['bg'])
-        main_frame.pack(fill=tk.BOTH, expand=True, padx=15, pady=15)
+        # Звезды
+        self.stars = StarBackground(self.canvas, 200)
+        self.stars.update()
         
-        title_frame = tk.Frame(main_frame, bg=COLORS['bg2'], height=90)
+        # Основной фрейм
+        main_frame = tk.Frame(self.canvas, bg=COLORS['bg2'], bd=2, relief=tk.FLAT)
+        main_frame.place(relx=0.5, rely=0.5, anchor=tk.CENTER, width=860, height=660)
+        self.main_frame = main_frame
+        
+        # Заголовок
+        title_frame = tk.Frame(main_frame, bg=COLORS['bg2'], height=80)
         title_frame.pack(fill=tk.X, padx=0, pady=0)
         title_frame.pack_propagate(False)
         
         title_inner = tk.Frame(title_frame, bg=COLORS['bg2'])
         title_inner.pack(fill=tk.BOTH, padx=20, pady=10)
-        tk.Label(title_inner, text=f"🔥 {APP_NAME}", font=("Segoe UI", 28, "bold"), bg=COLORS['bg2'], fg=COLORS['gold']).pack()
-        tk.Label(title_inner, text=CREATOR_TEXT, font=("Segoe UI", 11), bg=COLORS['bg2'], fg=COLORS['neon_orange']).pack()
+        tk.Label(title_inner, text=f"🔥 {APP_NAME}", font=("Segoe UI", 26, "bold"), bg=COLORS['bg2'], fg=COLORS['gold']).pack(side=tk.LEFT)
+        tk.Label(title_inner, text=CREATOR_TEXT, font=("Segoe UI", 10), bg=COLORS['bg2'], fg=COLORS['neon_orange']).pack(side=tk.RIGHT)
         
+        # Верхняя панель
         top_frame = tk.Frame(main_frame, bg=COLORS['bg'])
         top_frame.pack(fill=tk.X, padx=0, pady=5)
         
         self.admin_btn = GlowButton(top_frame, text="⚙️ АДМИН-ПАНЕЛЬ (F6)", command=self.toggle_admin, bg=COLORS['accent'], fg=COLORS['text'], font=("Segoe UI", 10, "bold"), padx=14, pady=5)
-        self.admin_btn.pack(side=tk.LEFT)
+        self.admin_btn.pack(side=tk.LEFT, padx=5)
         
         self.fs_btn = GlowButton(top_frame, text="⛶ ПОЛНЫЙ ЭКРАН (F11)", command=self.toggle_fullscreen, bg=COLORS['bg4'], fg=COLORS['text'], font=("Segoe UI", 10, "bold"), padx=14, pady=5)
-        self.fs_btn.pack(side=tk.RIGHT)
+        self.fs_btn.pack(side=tk.RIGHT, padx=5)
         
-        self.logout_btn = GlowButton(top_frame, text="🚪 ВЫЙТИ ИЗ АККАУНТА", command=self.logout, bg=COLORS['danger'], fg=COLORS['text'], font=("Segoe UI", 10, "bold"), padx=14, pady=5)
+        self.logout_btn = GlowButton(top_frame, text="🚪 ВЫЙТИ (F9)", command=self.logout, bg=COLORS['danger'], fg=COLORS['text'], font=("Segoe UI", 10, "bold"), padx=14, pady=5)
         self.logout_btn.pack(side=tk.RIGHT, padx=5)
         
+        # Статус
         stats_frame = tk.Frame(main_frame, bg=COLORS['bg'])
         stats_frame.pack(pady=5)
         self.status_label = tk.Label(stats_frame, text="⏸️ Ожидание...", bg=COLORS['bg'], fg=COLORS['warning'], font=("Segoe UI", 13, "bold"))
@@ -811,15 +879,16 @@ class InsultApp:
         self.count_label = tk.Label(stats_frame, text="📨 0", bg=COLORS['bg'], fg=COLORS['neon'], font=("Segoe UI", 13, "bold"))
         self.count_label.pack(side=tk.LEFT, padx=10)
         
-        self.preview = scrolledtext.ScrolledText(main_frame, height=9, bg=COLORS['bg3'], fg=COLORS['text'], insertbackground='white', font=("Segoe UI", 10), relief=tk.FLAT, borderwidth=2, padx=15, pady=15)
-        self.preview.pack(padx=0, pady=8, fill=tk.BOTH, expand=True)
+        # Превью
+        self.preview = scrolledtext.ScrolledText(main_frame, height=8, bg=COLORS['bg3'], fg=COLORS['text'], insertbackground='white', font=("Segoe UI", 10), relief=tk.FLAT, borderwidth=2, padx=15, pady=15)
+        self.preview.pack(padx=10, pady=5, fill=tk.BOTH, expand=True)
         self.preview.insert("1.0", f"""🔥 {APP_NAME}
 
-╔══════════════════════════════════════════════════════╗
-║  🎯 F3 → СТАРТ    🛑 F4 → СТОП    ⏸️ F5 → ПАУЗА   ║
-║  ⚙️ F6 → АДМИН-ПАНЕЛЬ    ⛶ F11 → ПОЛНЫЙ ЭКРАН    ║
-║  ❌ F9 → ВЫХОД                                     ║
-╚══════════════════════════════════════════════════════╝
+╔══════════════════════════════════════════════════════════════╗
+║  🎯 F3 → СТАРТ    🛑 F4 → СТОП    ⏸️ F5 → ПАУЗА           ║
+║  ⚙️ F6 → АДМИН-ПАНЕЛЬ    ⛶ F11 → ПОЛНЫЙ ЭКРАН              ║
+║  ❌ F9 → ВЫХОД                                             ║
+╚══════════════════════════════════════════════════════════════╝
 
 ✅ Каждое сообщение уникально
 ✅ Длинные связные предложения
@@ -830,6 +899,7 @@ class InsultApp:
 ✅ {LOVE_TEXT}""")
         self.preview.config(state=tk.DISABLED)
         
+        # Кнопки
         btn_frame = tk.Frame(main_frame, bg=COLORS['bg'])
         btn_frame.pack(pady=8)
         self.start_btn = GlowButton(btn_frame, text="🤖 СТАРТ (F3)", command=self.start_spam, bg=COLORS['success'], fg=COLORS['text'], font=("Segoe UI", 10, "bold"), width=16, padx=5, pady=8)
@@ -839,14 +909,23 @@ class InsultApp:
         self.pause_btn = GlowButton(btn_frame, text="⏸️ ПАУЗА (F5)", command=self.toggle_pause, bg=COLORS['accent'], fg=COLORS['text'], font=("Segoe UI", 10, "bold"), width=16, padx=5, pady=8)
         self.pause_btn.pack(side=tk.LEFT, padx=5)
         
+        # Подвал
         bottom_frame = tk.Frame(main_frame, bg=COLORS['bg'])
         bottom_frame.pack(pady=5)
         tk.Label(bottom_frame, text="F3-СТАРТ | F4-СТОП | F5-ПАУЗА | F6-АДМИН | F9-ВЫХОД | F11-ПОЛНЫЙ ЭКРАН", bg=COLORS['bg'], fg=COLORS['text2'], font=("Segoe UI", 9)).pack()
         tk.Label(bottom_frame, text=LOVE_TEXT, bg=COLORS['bg'], fg=COLORS['pink'], font=("Segoe UI", 10, "bold")).pack()
+        
+        self.admin_panel = AdminPanel(self.root, self.is_admin)
+        self.fullscreen = False
+        
+        self.setup_hotkeys()
+        self.update_stats()
     
     def logout(self):
-        if messagebox.askyesno("Выход из аккаунта", "Вы уверены, что хотите выйти из аккаунта?\nКлюч будет удалён, и вам нужно будет ввести его заново."):
+        if messagebox.askyesno("Выход из аккаунта", "Вы уверены, что хотите выйти из аккаунта?\nКлюч будет удалён."):
             db.logout()
+            if self.stars:
+                self.stars.stop()
             self.root.destroy()
             show_activation()
     
@@ -913,9 +992,15 @@ class InsultApp:
     
     def exit_app(self):
         stop_spamming()
+        if self.stars:
+            self.stars.stop()
         self.root.quit()
         self.root.destroy()
         sys.exit()
+
+# ============================================================
+# АДМИН-ПАНЕЛЬ
+# ============================================================
 
 class AdminPanel:
     def __init__(self, parent, is_admin=False):
@@ -929,26 +1014,46 @@ class AdminPanel:
     def create_panel(self):
         self.window = tk.Toplevel(self.parent)
         self.window.title(f"✨ АДМИН-ПАНЕЛЬ | {APP_NAME}")
-        self.window.geometry("900x700")
+        self.window.geometry("950x750")
         self.window.configure(bg=COLORS['bg'])
-        self.window.minsize(800, 600)
+        self.window.minsize(850, 650)
         self.window.protocol("WM_DELETE_WINDOW", self.hide)
         self.window.bind('<Escape>', lambda e: self.hide())
         self.window.withdraw()
         
-        title_frame = tk.Frame(self.window, bg=COLORS['bg2'], height=70)
+        # Центрируем
+        self.window.update_idletasks()
+        width = 950
+        height = 750
+        x = (self.window.winfo_screenwidth() // 2) - (width // 2)
+        y = (self.window.winfo_screenheight() // 2) - (height // 2)
+        self.window.geometry(f'{width}x{height}+{x}+{y}')
+        
+        # Фон со звёздами
+        canvas = tk.Canvas(self.window, bg=COLORS['bg'], highlightthickness=0)
+        canvas.pack(fill=tk.BOTH, expand=True)
+        
+        # Звёзды для админки
+        self.admin_stars = StarBackground(canvas, 100)
+        self.admin_stars.update()
+        
+        # Основной фрейм
+        main_frame = tk.Frame(canvas, bg=COLORS['bg2'], bd=2, relief=tk.FLAT)
+        main_frame.place(relx=0.5, rely=0.5, anchor=tk.CENTER, width=910, height=710)
+        
+        title_frame = tk.Frame(main_frame, bg=COLORS['bg2'], height=60)
         title_frame.pack(fill=tk.X, padx=0, pady=0)
         title_frame.pack_propagate(False)
         
         title_inner = tk.Frame(title_frame, bg=COLORS['bg2'])
-        title_inner.pack(fill=tk.BOTH, padx=30, pady=10)
-        tk.Label(title_inner, text="✨ АДМИН-ПАНЕЛЬ", font=("Segoe UI", 24, "bold"), bg=COLORS['bg2'], fg=COLORS['gold']).pack(side=tk.LEFT)
+        title_inner.pack(fill=tk.BOTH, padx=20, pady=10)
+        tk.Label(title_inner, text="✨ АДМИН-ПАНЕЛЬ", font=("Segoe UI", 22, "bold"), bg=COLORS['bg2'], fg=COLORS['gold']).pack(side=tk.LEFT)
         tk.Label(title_inner, text=f"⭐ {DEVELOPER}", font=("Segoe UI", 12), bg=COLORS['bg2'], fg=COLORS['neon_orange']).pack(side=tk.RIGHT)
         
-        sep = tk.Frame(self.window, bg=COLORS['neon'], height=3)
+        sep = tk.Frame(main_frame, bg=COLORS['neon'], height=3)
         sep.pack(fill=tk.X, padx=0)
         
-        self.notebook = ttk.Notebook(self.window)
+        self.notebook = ttk.Notebook(main_frame)
         self.notebook.pack(fill=tk.BOTH, expand=True, padx=15, pady=10)
         
         style = ttk.Style()
@@ -957,7 +1062,7 @@ class AdminPanel:
         style.configure('TNotebook.Tab', background=COLORS['bg2'], foreground=COLORS['text'], padding=[20, 8], font=("Segoe UI", 10, "bold"))
         style.map('TNotebook.Tab', background=[('selected', COLORS['accent'])])
         
-        # Для всех
+        # Вкладки
         self.tab_main = tk.Frame(self.notebook, bg=COLORS['bg'])
         self.notebook.add(self.tab_main, text="📊 Главная")
         self.create_main_tab()
@@ -966,7 +1071,6 @@ class AdminPanel:
         self.notebook.add(self.tab_about, text="💜 О нас")
         self.create_about_tab()
         
-        # Только для админов
         if self.is_admin:
             self.tab_users = tk.Frame(self.notebook, bg=COLORS['bg'])
             self.notebook.add(self.tab_users, text="👥 Пользователи")
@@ -990,7 +1094,7 @@ class AdminPanel:
         
         speed_control = tk.Frame(speed_frame, bg=COLORS['bg'])
         speed_control.pack(fill=tk.X, pady=5)
-        self.speed_slider = tk.Scale(speed_control, from_=0.001, to=0.45, resolution=0.001, orient=tk.HORIZONTAL, length=480,
+        self.speed_slider = tk.Scale(speed_control, from_=0.001, to=0.45, resolution=0.001, orient=tk.HORIZONTAL, length=500,
                                       bg=COLORS['bg'], fg=COLORS['text'], troughcolor=COLORS['bg3'], sliderlength=22, highlightthickness=0)
         self.speed_slider.set(spam_speed)
         self.speed_slider.pack(side=tk.LEFT, fill=tk.X, expand=True)
@@ -1023,7 +1127,7 @@ class AdminPanel:
         info_frame = tk.Frame(tab, bg=COLORS['bg'])
         info_frame.pack(pady=15, padx=20, fill=tk.BOTH, expand=True)
         tk.Label(info_frame, text="📊 Живая статистика", font=("Segoe UI", 14, "bold"), bg=COLORS['bg'], fg=COLORS['neon']).pack(anchor='w')
-        self.info_text = tk.Text(info_frame, height=9, bg=COLORS['bg2'], fg=COLORS['text'], font=("Consolas", 10), relief=tk.FLAT, borderwidth=2, padx=15, pady=12)
+        self.info_text = tk.Text(info_frame, height=8, bg=COLORS['bg2'], fg=COLORS['text'], font=("Consolas", 10), relief=tk.FLAT, borderwidth=2, padx=15, pady=12)
         self.info_text.pack(fill=tk.BOTH, expand=True, pady=5)
         self.info_text.insert("1.0", "⏳ Ожидание запуска...")
         self.info_text.config(state=tk.DISABLED)
@@ -1126,7 +1230,7 @@ class AdminPanel:
         stats_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=20)
         
         tk.Label(stats_frame, text="📈 ДЕТАЛЬНАЯ СТАТИСТИКА", font=("Segoe UI", 18, "bold"), bg=COLORS['bg'], fg=COLORS['gold']).pack(pady=10)
-        self.stats_text = tk.Text(stats_frame, height=15, bg=COLORS['bg2'], fg=COLORS['text'], font=("Consolas", 11), relief=tk.FLAT, borderwidth=2, padx=20, pady=15)
+        self.stats_text = tk.Text(stats_frame, height=14, bg=COLORS['bg2'], fg=COLORS['text'], font=("Consolas", 11), relief=tk.FLAT, borderwidth=2, padx=20, pady=15)
         self.stats_text.pack(fill=tk.BOTH, expand=True, pady=10)
         self.stats_text.config(state=tk.DISABLED)
         
@@ -1140,16 +1244,16 @@ class AdminPanel:
         about_frame = tk.Frame(tab, bg=COLORS['bg'])
         about_frame.pack(fill=tk.BOTH, expand=True, padx=40, pady=40)
         
-        tk.Label(about_frame, text="🔥", font=("Segoe UI", 80), bg=COLORS['bg']).pack(pady=5)
-        tk.Label(about_frame, text=APP_NAME, font=("Segoe UI", 28, "bold"), bg=COLORS['bg'], fg=COLORS['gold']).pack(pady=5)
+        tk.Label(about_frame, text="🔥", font=("Segoe UI", 70), bg=COLORS['bg']).pack(pady=5)
+        tk.Label(about_frame, text=APP_NAME, font=("Segoe UI", 26, "bold"), bg=COLORS['bg'], fg=COLORS['gold']).pack(pady=5)
         tk.Label(about_frame, text=f"✨ Версия {VERSION} ✨", font=("Segoe UI", 14), bg=COLORS['bg'], fg=COLORS['text2']).pack(pady=5)
         
         sep = tk.Frame(about_frame, bg=COLORS['neon'], height=2, width=350)
         sep.pack(pady=15)
         
         tk.Label(about_frame, text="👨‍💻 РАЗРАБОТЧИК", font=("Segoe UI", 13, "bold"), bg=COLORS['bg'], fg=COLORS['text']).pack()
-        tk.Label(about_frame, text=DEVELOPER, font=("Segoe UI", 22, "bold"), bg=COLORS['bg'], fg=COLORS['pink']).pack(pady=3)
-        tk.Label(about_frame, text=CREATOR_TEXT, font=("Segoe UI", 13), bg=COLORS['bg'], fg=COLORS['gold']).pack(pady=5)
+        tk.Label(about_frame, text=DEVELOPER, font=("Segoe UI", 20, "bold"), bg=COLORS['bg'], fg=COLORS['pink']).pack(pady=3)
+        tk.Label(about_frame, text=CREATOR_TEXT, font=("Segoe UI", 12), bg=COLORS['bg'], fg=COLORS['gold']).pack(pady=5)
         tk.Label(about_frame, text=PRICE_TEXT, font=("Segoe UI", 12, "bold"), bg=COLORS['bg'], fg=COLORS['neon']).pack(pady=5)
         
         sep2 = tk.Frame(about_frame, bg=COLORS['accent'], height=1, width=250)
@@ -1412,6 +1516,8 @@ class AdminPanel:
         if self.window:
             self.window.withdraw()
             self.is_open = False
+            if hasattr(self, 'admin_stars') and self.admin_stars:
+                self.admin_stars.stop()
     
     def toggle(self):
         if self.is_open:
