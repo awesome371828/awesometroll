@@ -1,2 +1,6 @@
 aiogram==3.4.1
 python-dateutil
+pyinstaller
+keyboard
+cryptography
+pillow
