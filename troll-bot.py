@@ -16,8 +16,8 @@ from aiogram.fsm.storage.memory import MemoryStorage
 # НАСТРОЙКИ
 # ============================================================
 BOT_TOKEN = "8935419647:AAEcZOioBC5QU4-TkLBXtO88BWNmjo_S73w"
-ADMIN_IDS = [6652898792, 6652898792]  # ТВОЙ ID
-OWNER_ID = 6652898792  # ВЛАДЕЛЕЦ
+ADMIN_IDS = [6652898792]
+OWNER_ID = 6652898792
 PRICE = 50
 ANTISPAM_SECONDS = 1
 BAN_MINUTES = 15
@@ -81,7 +81,6 @@ def get_db():
 # ФУНКЦИИ ДЛЯ АДМИНОК
 # ============================================================
 def is_admin(user_id):
-    """Проверяет, является ли пользователь админом"""
     if user_id == OWNER_ID:
         return True
     conn = get_db()
@@ -92,7 +91,6 @@ def is_admin(user_id):
     return result is not None and result[0] == 1
 
 def set_admin(user_id, status):
-    """Назначает или снимает админа"""
     conn = get_db()
     c = conn.cursor()
     c.execute('UPDATE users SET is_admin = ? WHERE user_id = ?', (1 if status else 0, user_id))
@@ -100,7 +98,6 @@ def set_admin(user_id, status):
     conn.close()
 
 def get_all_users():
-    """Получает список всех пользователей"""
     conn = get_db()
     c = conn.cursor()
     c.execute('SELECT user_id, username, first_name, license_key, is_activated, is_banned, is_admin FROM users ORDER BY id DESC')
@@ -109,7 +106,6 @@ def get_all_users():
     return users
 
 def get_user_stats():
-    """Получает статистику"""
     conn = get_db()
     c = conn.cursor()
     c.execute('SELECT COUNT(*) FROM users')
@@ -130,6 +126,7 @@ class LicenseStates(StatesGroup):
     waiting_for_license = State()
     waiting_for_keygen = State()
     waiting_for_key_to_send = State()
+    waiting_for_admin_action = State()
 
 # ============================================================
 # БОТ
@@ -202,7 +199,7 @@ def download_keyboard():
 # ============================================================
 # АНТИСПАМ И БАН
 # ============================================================
-async def check_antispam(user_id):
+async def check_antispam(user_id, callback=None):
     conn = get_db()
     c = conn.cursor()
     c.execute('SELECT last_message_time FROM users WHERE user_id = ?', (user_id,))
@@ -212,6 +209,8 @@ async def check_antispam(user_id):
         last_time = datetime.fromisoformat(result[0])
         if (datetime.now() - last_time).total_seconds() < ANTISPAM_SECONDS:
             conn.close()
+            if callback:
+                await callback.answer("⏳ Подождите 1 секунду!", show_alert=True)
             return False
     
     c.execute('UPDATE users SET last_message_time = ? WHERE user_id = ?', 
@@ -268,7 +267,6 @@ async def start(message: types.Message):
         VALUES (?, ?, ?, ?)
     ''', (user_id, username, first_name, datetime.now().isoformat()))
     
-    # Если это первый пользователь или владелец - делаем админом
     if user_id == OWNER_ID:
         c.execute('UPDATE users SET is_admin = 1 WHERE user_id = ?', (user_id,))
     
@@ -296,8 +294,7 @@ async def start(message: types.Message):
 
 @dp.callback_query(F.data == "menu")
 async def menu(callback: types.CallbackQuery):
-    if not await check_antispam(callback.from_user.id):
-        await callback.answer("⏳ Подождите немного!", show_alert=True)
+    if not await check_antispam(callback.from_user.id, callback):
         return
     
     is_banned, _ = await is_user_banned(callback.from_user.id)
@@ -310,7 +307,6 @@ async def menu(callback: types.CallbackQuery):
         await callback.answer()
         return
     
-    # Если пользователь админ - показываем админ-кнопку
     if is_admin(callback.from_user.id):
         text = "🔥 <b>AWESOMETROLLING</b> — Главное меню\n\n👑 <b>Вы вошли как администратор!</b>"
         await callback.message.edit_text(text, reply_markup=admin_keyboard(), parse_mode="HTML")
@@ -324,8 +320,7 @@ async def menu(callback: types.CallbackQuery):
 
 @dp.callback_query(F.data == "download")
 async def download(callback: types.CallbackQuery):
-    if not await check_antispam(callback.from_user.id):
-        await callback.answer("⏳ Подождите немного!", show_alert=True)
+    if not await check_antispam(callback.from_user.id, callback):
         return
     
     is_banned, _ = await is_user_banned(callback.from_user.id)
@@ -347,8 +342,7 @@ async def download(callback: types.CallbackQuery):
 
 @dp.callback_query(F.data == "about")
 async def about(callback: types.CallbackQuery):
-    if not await check_antispam(callback.from_user.id):
-        await callback.answer("⏳ Подождите немного!", show_alert=True)
+    if not await check_antispam(callback.from_user.id, callback):
         return
     
     is_banned, _ = await is_user_banned(callback.from_user.id)
@@ -386,8 +380,7 @@ async def about(callback: types.CallbackQuery):
 # ============================================================
 @dp.callback_query(F.data == "buy")
 async def buy(callback: types.CallbackQuery):
-    if not await check_antispam(callback.from_user.id):
-        await callback.answer("⏳ Подождите немного!", show_alert=True)
+    if not await check_antispam(callback.from_user.id, callback):
         return
     
     is_banned, _ = await is_user_banned(callback.from_user.id)
@@ -411,8 +404,7 @@ async def buy(callback: types.CallbackQuery):
 
 @dp.callback_query(F.data == "pay_card")
 async def pay_card(callback: types.CallbackQuery):
-    if not await check_antispam(callback.from_user.id):
-        await callback.answer("⏳ Подождите немного!", show_alert=True)
+    if not await check_antispam(callback.from_user.id, callback):
         return
     
     is_banned, _ = await is_user_banned(callback.from_user.id)
@@ -443,8 +435,7 @@ async def pay_card(callback: types.CallbackQuery):
 
 @dp.callback_query(F.data == "pay_other")
 async def pay_other(callback: types.CallbackQuery):
-    if not await check_antispam(callback.from_user.id):
-        await callback.answer("⏳ Подождите немного!", show_alert=True)
+    if not await check_antispam(callback.from_user.id, callback):
         return
     
     is_banned, _ = await is_user_banned(callback.from_user.id)
@@ -468,8 +459,7 @@ async def pay_other(callback: types.CallbackQuery):
 async def payment_done(callback: types.CallbackQuery):
     user_id = callback.from_user.id
     
-    if not await check_antispam(user_id):
-        await callback.answer("⏳ Подождите немного!", show_alert=True)
+    if not await check_antispam(user_id, callback):
         return
     
     is_banned, _ = await is_user_banned(user_id)
@@ -511,7 +501,7 @@ async def payment_done(callback: types.CallbackQuery):
     await callback.answer()
 
 # ============================================================
-# АДМИН: ПОДТВЕРЖДЕНИЕ/ОТКЛОНЕНИЕ
+# АДМИН: ПОДТВЕРЖДЕНИЕ/ОТКЛОНЕНИЕ — ИСПРАВЛЕНО!
 # ============================================================
 @dp.callback_query(F.data.startswith("confirm_pay_"))
 async def confirm_payment(callback: types.CallbackQuery, state: FSMContext):
@@ -534,11 +524,17 @@ async def confirm_payment(callback: types.CallbackQuery, state: FSMContext):
 
 @dp.callback_query(F.data.startswith("reject_pay_"))
 async def reject_payment(callback: types.CallbackQuery):
+    # Проверяем что это админ
     if not is_admin(callback.from_user.id):
         await callback.answer("⛔ Доступ запрещен!", show_alert=True)
         return
     
-    user_id = int(callback.data.split("_")[2])
+    # Получаем ID пользователя из callback_data
+    try:
+        user_id = int(callback.data.split("_")[2])
+    except:
+        await callback.answer("❌ Ошибка!", show_alert=True)
+        return
     
     # Баним пользователя на 15 минут
     conn = get_db()
@@ -568,7 +564,7 @@ async def reject_payment(callback: types.CallbackQuery):
         f"⏳ Забанен на {BAN_MINUTES} минут",
         parse_mode="HTML"
     )
-    await callback.answer()
+    await callback.answer("✅ Оплата отклонена, пользователь забанен!")
 
 @dp.message(LicenseStates.waiting_for_key_to_send)
 async def send_key_to_user(message: types.Message, state: FSMContext):
@@ -628,8 +624,7 @@ async def send_key_to_user(message: types.Message, state: FSMContext):
 # ============================================================
 @dp.callback_query(F.data == "status")
 async def status(callback: types.CallbackQuery):
-    if not await check_antispam(callback.from_user.id):
-        await callback.answer("⏳ Подождите немного!", show_alert=True)
+    if not await check_antispam(callback.from_user.id, callback):
         return
     
     is_banned, _ = await is_user_banned(callback.from_user.id)
@@ -682,8 +677,7 @@ async def status(callback: types.CallbackQuery):
 # ============================================================
 @dp.callback_query(F.data == "activate")
 async def activate_prompt(callback: types.CallbackQuery, state: FSMContext):
-    if not await check_antispam(callback.from_user.id):
-        await callback.answer("⏳ Подождите немного!", show_alert=True)
+    if not await check_antispam(callback.from_user.id, callback):
         return
     
     is_banned, _ = await is_user_banned(callback.from_user.id)
@@ -935,7 +929,7 @@ async def admin_add_admin(callback: types.CallbackQuery, state: FSMContext):
         reply_markup=back_keyboard(),
         parse_mode="HTML"
     )
-    await state.set_state(LicenseStates.waiting_for_key_to_send)  # переиспользуем состояние
+    await state.set_state(LicenseStates.waiting_for_key_to_send)
     await state.update_data(action="add_admin")
     await callback.answer()
 
