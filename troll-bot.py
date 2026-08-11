@@ -18,6 +18,9 @@ BOT_TOKEN = "8935419647:AAEcZOioBC5QU4-TkLBXtO88BWNmjo_S73w"  # ТВОЙ ТОК�
 ADMIN_IDS = [6652898792]  # ТВОЙ TELEGRAM ID (узнай у @userinfobot)
 PRICE = 50  # ЦЕНА 50 РУБЛЕЙ В МЕСЯЦ
 
+# ССЫЛКА НА ОПЛАТУ ЮMONEY
+PAYMENT_LINK = "https://yoomoney.ru/quickpay/fundraise/button?billNumber=1JJ662LM5S4.260811&"
+
 # ============================================================
 # БАЗА ДАННЫХ
 # ============================================================
@@ -106,7 +109,7 @@ def back_keyboard():
 
 def payment_keyboard():
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="💳 Карта РФ", callback_data="pay_card")],
+        [InlineKeyboardButton(text="💳 Оплатить картой", callback_data="pay_card")],
         [InlineKeyboardButton(text="₿ Криптовалюта", callback_data="pay_crypto")],
         [InlineKeyboardButton(text="💸 Другой способ", callback_data="pay_other")],
         [InlineKeyboardButton(text="⬅️ Назад", callback_data="menu")]
@@ -195,16 +198,55 @@ async def buy(callback: types.CallbackQuery):
 @dp.callback_query(F.data.startswith("pay_"))
 async def payment_method(callback: types.CallbackQuery):
     method = callback.data.split("_")[1]
-    texts = {
-        "card": "💳 <b>Оплата картой</b>\n\n💳 Карта: <code>1234 5678 9012 3456</code>\n\n📩 После оплаты напиши @flidges",
-        "crypto": "₿ <b>Оплата криптой</b>\n\n<b>USDT TRC-20:</b>\n<code>TXxxxxxxxxxxxxxxxx</code>\n\n📩 После оплаты напиши @flidges",
-        "other": "💸 <b>Другие способы</b>\n\n📩 Свяжись с @flidges"
-    }
-    await callback.message.edit_text(
-        texts.get(method, "Выбери способ"),
-        reply_markup=back_keyboard(),
-        parse_mode="HTML"
-    )
+    
+    if method == "card":
+        text = f"""💳 <b>Оплата картой РФ</b>
+
+<b>Ссылка для оплаты:</b>
+<a href="{PAYMENT_LINK}">💰 Оплатить {PRICE}₽</a>
+
+📩 <b>После оплаты:</b>
+1. Нажми на ссылку и оплати {PRICE}₽
+2. Напиши @flidges с подтверждением
+3. Получи ключ активации
+
+👨‍💻 По вопросам: @flidges"""
+        
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text=f"💰 Оплатить {PRICE}₽", url=PAYMENT_LINK)],
+            [InlineKeyboardButton(text="⬅️ Назад", callback_data="menu")]
+        ])
+        
+        await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
+    
+    elif method == "crypto":
+        text = """₿ <b>Оплата криптовалютой</b>
+
+<b>USDT (TRC-20):</b>
+<code>TXxxxxxxxxxxxxxxxxxxxxxxxxxxxxx</code>
+
+<b>BTC:</b>
+<code>1xxxxxxxxxxxxxxxxxxxxxxxxxxxx</code>
+
+📩 <b>После оплаты:</b>
+1. Отправь хеш транзакции
+2. Напиши @flidges
+3. Получи ключ"""
+        
+        await callback.message.edit_text(text, reply_markup=back_keyboard(), parse_mode="HTML")
+    
+    else:
+        text = """💸 <b>Другие способы оплаты</b>
+
+Принимаются:
+• Стим-подарки
+• Подарочные карты
+• Перевод на карту
+
+📩 Свяжись с @flidges"""
+        
+        await callback.message.edit_text(text, reply_markup=back_keyboard(), parse_mode="HTML")
+    
     await callback.answer()
 
 @dp.callback_query(F.data == "activate")
@@ -424,6 +466,7 @@ async def main():
     print("🤖 БОТ ЗАПУЩЕН!")
     print(f"👨‍💻 АДМИН: {ADMIN_IDS}")
     print(f"💰 ЦЕНА: {PRICE}₽/месяц")
+    print(f"💳 ССЫЛКА: {PAYMENT_LINK}")
     print("=" * 40)
     await dp.start_polling(bot)
 
