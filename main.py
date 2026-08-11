@@ -622,7 +622,7 @@ class GlowButton(tk.Button):
         self.after(100, lambda: self.config(relief=tk.FLAT))
 
 # ============================================================
-# ЗВЕЗДЫ НА ФОНЕ
+# ЗВЕЗДЫ НА ФОНЕ (ИСПРАВЛЕНО)
 # ============================================================
 
 class StarBackground:
@@ -636,10 +636,10 @@ class StarBackground:
             y = random.randint(0, canvas.winfo_reqheight() or 600)
             size = random.randint(1, 3)
             speed = random.uniform(0.02, 0.08)
-            alpha = random.uniform(0.3, 1.0)
+            brightness = random.randint(100, 255)
             self.stars.append({
-                'x': x, 'y': y, 'size': size, 'speed': speed, 'alpha': alpha,
-                'phase': random.uniform(0, 2 * 3.14159)
+                'x': x, 'y': y, 'size': size, 'speed': speed, 
+                'brightness': brightness, 'phase': random.uniform(0, 6.28)
             })
     
     def update(self):
@@ -648,15 +648,20 @@ class StarBackground:
         self.canvas.delete("star")
         for star in self.stars:
             star['phase'] += star['speed']
-            star['x'] += random.uniform(-0.2, 0.2)
-            star['y'] += random.uniform(-0.2, 0.2)
-            if star['x'] < 0: star['x'] = self.canvas.winfo_reqwidth() or 800
-            if star['x'] > (self.canvas.winfo_reqwidth() or 800): star['x'] = 0
-            if star['y'] < 0: star['y'] = self.canvas.winfo_reqheight() or 600
-            if star['y'] > (self.canvas.winfo_reqheight() or 600): star['y'] = 0
+            star['x'] += random.uniform(-0.3, 0.3)
+            star['y'] += random.uniform(-0.3, 0.3)
             
-            alpha = int((0.5 + 0.5 * (star['alpha'] * star['phase'])) * 255)
-            color = f"#{alpha:02x}{alpha:02x}{255:02x}"
+            width = self.canvas.winfo_reqwidth() or 800
+            height = self.canvas.winfo_reqheight() or 600
+            if star['x'] < 0: star['x'] = width
+            if star['x'] > width: star['x'] = 0
+            if star['y'] < 0: star['y'] = height
+            if star['y'] > height: star['y'] = 0
+            
+            # ПРАВИЛЬНЫЙ ЦВЕТ!
+            b = int(star['brightness'] * (0.5 + 0.5 * (star['phase'] % 1)))
+            color = f"#{min(255, b):02x}{min(255, b//2):02x}{min(255, b):02x}"
+            
             self.canvas.create_oval(
                 star['x'] - star['size'], star['y'] - star['size'],
                 star['x'] + star['size'], star['y'] + star['size'],
@@ -687,15 +692,12 @@ class ActivationWindow:
         y = (self.window.winfo_screenheight() // 2) - (height // 2)
         self.window.geometry(f'{width}x{height}+{x}+{y}')
         
-        # Canvas для фона со звёздами
         self.canvas = tk.Canvas(self.window, width=600, height=650, bg=COLORS['bg'], highlightthickness=0)
         self.canvas.pack(fill=tk.BOTH, expand=True)
         
-        # Звезды
         self.stars = StarBackground(self.canvas, 150)
         self.stars.update()
         
-        # Тень
         shadow = tk.Frame(self.canvas, bg=COLORS['shadow'], width=580, height=600)
         shadow.place(x=10, y=25)
         
@@ -835,7 +837,7 @@ class InsultApp:
         if user and (user[0] == 1 or user[1] == 1):
             self.is_admin = True
         
-        # Canvas для фона со звёздами
+        # Canvas для фона
         self.canvas = tk.Canvas(self.root, bg=COLORS['bg'], highlightthickness=0)
         self.canvas.pack(fill=tk.BOTH, expand=True)
         
@@ -922,7 +924,7 @@ class InsultApp:
         self.update_stats()
     
     def logout(self):
-        if messagebox.askyesno("Выход из аккаунта", "Вы уверены, что хотите выйти из аккаунта?\nКлюч будет удалён."):
+        if messagebox.askyesno("Выход из аккаунта", "Вы уверены, что хотите выйти?"):
             db.logout()
             if self.stars:
                 self.stars.stop()
@@ -1021,7 +1023,6 @@ class AdminPanel:
         self.window.bind('<Escape>', lambda e: self.hide())
         self.window.withdraw()
         
-        # Центрируем
         self.window.update_idletasks()
         width = 950
         height = 750
@@ -1029,15 +1030,12 @@ class AdminPanel:
         y = (self.window.winfo_screenheight() // 2) - (height // 2)
         self.window.geometry(f'{width}x{height}+{x}+{y}')
         
-        # Фон со звёздами
         canvas = tk.Canvas(self.window, bg=COLORS['bg'], highlightthickness=0)
         canvas.pack(fill=tk.BOTH, expand=True)
         
-        # Звёзды для админки
         self.admin_stars = StarBackground(canvas, 100)
         self.admin_stars.update()
         
-        # Основной фрейм
         main_frame = tk.Frame(canvas, bg=COLORS['bg2'], bd=2, relief=tk.FLAT)
         main_frame.place(relx=0.5, rely=0.5, anchor=tk.CENTER, width=910, height=710)
         
