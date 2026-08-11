@@ -749,7 +749,7 @@ class GlowButton(tk.Button):
         self.after(100, lambda: self.config(relief=tk.FLAT))
 
 # ============================================================
-# ЗВЕЗДЫ НА ФОНЕ
+# ЗВЕЗДЫ НА ФОНЕ (ИСПРАВЛЕНО)
 # ============================================================
 
 class StarBackground:
@@ -780,9 +780,16 @@ class StarBackground:
             
             width = self.canvas.winfo_reqwidth() or 800
             height = self.canvas.winfo_reqheight() or 600
-            if star['x'] < 0: star['x'] = width            if star['x'] > width: star['x'] = 0
-            if star['y'] < 0: star['y'] = height
-            if star['y'] > height: star['y'] = 0
+            
+            # ← ИСПРАВЛЕНО! РАЗДЕЛИЛИ НА ДВЕ СТРОКИ
+            if star['x'] < 0:
+                star['x'] = width
+            if star['x'] > width:
+                star['x'] = 0
+            if star['y'] < 0:
+                star['y'] = height
+            if star['y'] > height:
+                star['y'] = 0
             
             b = int(star['brightness'] * (0.5 + 0.5 * (star['phase'] % 1)))
             color = f"#{min(255, b):02x}{min(255, b//2):02x}{min(255, b):02x}"
