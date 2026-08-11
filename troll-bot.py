@@ -4,7 +4,7 @@ import sqlite3
 import random
 import string
 from datetime import datetime
-from dateutil.relativedelta import relativedelta
+from dateutil.relativedelta import relativedelta  # ← ИСПРАВЛЕНО!
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.filters import Command
@@ -95,24 +95,19 @@ dp = Dispatcher(storage=storage)
 # КРАСИВЫЕ КЛАВИАТУРЫ
 # ============================================================
 def main_keyboard():
-    """Главное меню — красивое, сгруппированное"""
     return InlineKeyboardMarkup(inline_keyboard=[
-        # Ряд 1: Покупка и активация
         [
             InlineKeyboardButton(text="🛒 Купить доступ", callback_data="buy"),
             InlineKeyboardButton(text="🔑 Активировать ключ", callback_data="activate")
         ],
-        # Ряд 2: Статус и скачать
         [
             InlineKeyboardButton(text="📊 Мой статус", callback_data="status"),
             InlineKeyboardButton(text="⬇️ Скачать", callback_data="download")
         ],
-        # Ряд 3: Обзор и поддержка
         [
             InlineKeyboardButton(text="📺 Обзор", url=REVIEW_LINK),
             InlineKeyboardButton(text="💬 Поддержка", url="https://t.me/flidges")
         ],
-        # Ряд 4: О программе
         [
             InlineKeyboardButton(text="📝 О программе", callback_data="about")
         ]
