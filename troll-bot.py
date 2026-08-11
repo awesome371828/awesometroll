@@ -848,4 +848,123 @@ async def generate_key(message: types.Message, state: FSMContext):
 @dp.callback_query(F.data == "admin_keys")
 async def admin_keys(callback: types.CallbackQuery):
     if not is_admin(callback.from_user.id):
-        await callback
+        await callback.answer("⛔ Доступ запрещен!", show_alert=True)
+        return
+    
+    conn = get_db()
+    c = conn.cursor()
+    c.execute('SELECT license_key, license_expires, is_activated, user_id FROM users WHERE license_key IS NOT NULL ORDER BY id DESC LIMIT 20')
+    keys = c.fetchall()
+    conn.close()
+    
+    if not keys:
+        text = "🔑 <b>Ключей нет</b>"
+    else:
+        text = "🔑 <b>Последние 20 ключей:</b>\n\n"
+        for key in keys:
+            license_key, expires_at, is_activated, user_id = key
+            status = "✅" if is_activated else "🔓"
+            expiry = datetime.fromisoformat(expires_at).strftime('%d.%m.%Y')
+            text += f"{status} <code>{license_key}</code> | До: {expiry} | Пользователь: <code>{user_id}</code>\n"
+    
+    await callback.message.edit_text(text, reply_markup=admin_keyboard(), parse_mode="HTML")
+    await callback.answer()
+
+@dp.callback_query(F.data == "admin_logs")
+async def admin_logs(callback: types.CallbackQuery):
+    if not is_admin(callback.from_user.id):
+        await callback.answer("⛔ Доступ запрещен!", show_alert=True)
+        return
+    
+    conn = get_db()
+    c = conn.cursor()
+    c.execute('SELECT user_id, action, timestamp FROM logs ORDER BY id DESC LIMIT 20')
+    logs = c.fetchall()
+    conn.close()
+    
+    if not logs:
+        text = "📋 <b>Логов нет</b>"
+    else:
+        text = "📋 <b>Последние действия:</b>\n\n"
+        for log in logs:
+            user_id, action, timestamp = log
+            dt = datetime.fromisoformat(timestamp).strftime('%d.%m %H:%M')
+            text += f"[{dt}] <code>{user_id}</code>: {action}\n"
+    
+    await callback.message.edit_text(text, reply_markup=admin_keyboard(), parse_mode="HTML")
+    await callback.answer()
+
+@dp.callback_query(F.data == "admin_admins")
+async def admin_admins(callback: types.CallbackQuery):
+    if not is_admin(callback.from_user.id):
+        await callback.answer("⛔ Доступ запрещен!", show_alert=True)
+        return
+    
+    conn = get_db()
+    c = conn.cursor()
+    c.execute('SELECT user_id, username, first_name FROM users WHERE is_admin = 1')
+    admins = c.fetchall()
+    conn.close()
+    
+    if not admins:
+        text = "👑 <b>Администраторов нет</b>"
+    else:
+        text = "👑 <b>Список администраторов:</b>\n\n"
+        for admin in admins:
+            user_id, username, first_name = admin
+            name = first_name or username or str(user_id)
+            text += f"• {name} | ID: <code>{user_id}</code>\n"
+    
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="➕ Добавить админа", callback_data="admin_add_admin")],
+        [InlineKeyboardButton(text="➖ Убрать админа", callback_data="admin_remove_admin")],
+        [InlineKeyboardButton(text="⬅️ Назад", callback_data="menu")]
+    ])
+    
+    await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
+    await callback.answer()
+
+@dp.callback_query(F.data == "admin_add_admin")
+async def admin_add_admin(callback: types.CallbackQuery, state: FSMContext):
+    if not is_admin(callback.from_user.id):
+        await callback.answer("⛔ Доступ запрещен!", show_alert=True)
+        return
+    
+    await callback.message.edit_text(
+        "👑 <b>Добавление администратора</b>\n\nВведите ID пользователя, которому хотите выдать права администратора:",
+        reply_markup=back_keyboard(),
+        parse_mode="HTML"
+    )
+    await state.set_state(LicenseStates.waiting_for_key_to_send)  # переиспользуем состояние
+    await state.update_data(action="add_admin")
+    await callback.answer()
+
+@dp.callback_query(F.data == "admin_remove_admin")
+async def admin_remove_admin(callback: types.CallbackQuery, state: FSMContext):
+    if not is_admin(callback.from_user.id):
+        await callback.answer("⛔ Доступ запрещен!", show_alert=True)
+        return
+    
+    await callback.message.edit_text(
+        "👑 <b>Удаление администратора</b>\n\nВведите ID пользователя, у которого хотите забрать права администратора:",
+        reply_markup=back_keyboard(),
+        parse_mode="HTML"
+    )
+    await state.set_state(LicenseStates.waiting_for_key_to_send)
+    await state.update_data(action="remove_admin")
+    await callback.answer()
+
+# ============================================================
+# ЗАПУСК
+# ============================================================
+async def main():
+    init_db()
+    print("=" * 40)
+    print("🤖 AWESOMETROLLING БОТ ЗАПУЩЕН!")
+    print(f"👨‍💻 ВЛАДЕЛЕЦ: {OWNER_ID}")
+    print(f"💰 ЦЕНА: {PRICE}₽/месяц")
+    print("=" * 40)
+    await dp.start_polling(bot)
+
+if __name__ == "__main__":
+    asyncio.run(main())
