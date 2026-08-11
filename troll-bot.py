@@ -3,7 +3,7 @@ import logging
 import sqlite3
 import random
 import string
-from datetime import datetime, timedelta
+from datetime import datetime
 from dateutil.relativedelta import relativedelta
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
@@ -21,7 +21,6 @@ PRICE = 50
 ANTISPAM_SECONDS = 2
 BAN_MINUTES = 15
 
-# ССЫЛКИ
 PAYMENT_LINK = "https://yoomoney.ru/quickpay/fundraise/button?billNumber=1JJ662LM5S4.260811&"
 DOWNLOAD_LINKS = {
     "google": "https://drive.google.com/file/d/16-z26al_gb2uBI3ozBbnWIIqW9Dg92Hv/view?usp=sharing",
@@ -93,32 +92,53 @@ bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher(storage=storage)
 
 # ============================================================
-# КЛАВИАТУРЫ
+# КРАСИВЫЕ КЛАВИАТУРЫ
 # ============================================================
 def main_keyboard():
+    """Главное меню — красивое, сгруппированное"""
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="📦 Купить доступ (50₽/мес)", callback_data="buy")],
-        [InlineKeyboardButton(text="🔑 Активировать ключ", callback_data="activate")],
-        [InlineKeyboardButton(text="📊 Мой статус", callback_data="status")],
-        [InlineKeyboardButton(text="⬇️ Скачать", callback_data="download")],
-        [InlineKeyboardButton(text="📺 Обзор", url=REVIEW_LINK)],
-        [InlineKeyboardButton(text="📩 Поддержка", url="https://t.me/flidges")],
-        [InlineKeyboardButton(text="📝 О программе", callback_data="about")]
+        # Ряд 1: Покупка и активация
+        [
+            InlineKeyboardButton(text="🛒 Купить доступ", callback_data="buy"),
+            InlineKeyboardButton(text="🔑 Активировать ключ", callback_data="activate")
+        ],
+        # Ряд 2: Статус и скачать
+        [
+            InlineKeyboardButton(text="📊 Мой статус", callback_data="status"),
+            InlineKeyboardButton(text="⬇️ Скачать", callback_data="download")
+        ],
+        # Ряд 3: Обзор и поддержка
+        [
+            InlineKeyboardButton(text="📺 Обзор", url=REVIEW_LINK),
+            InlineKeyboardButton(text="💬 Поддержка", url="https://t.me/flidges")
+        ],
+        # Ряд 4: О программе
+        [
+            InlineKeyboardButton(text="📝 О программе", callback_data="about")
+        ]
     ])
 
 def admin_keyboard():
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="📊 Статистика", callback_data="admin_stats")],
-        [InlineKeyboardButton(text="👥 Пользователи", callback_data="admin_users")],
-        [InlineKeyboardButton(text="🔑 Создать ключ", callback_data="admin_gen")],
-        [InlineKeyboardButton(text="📋 Все ключи", callback_data="admin_keys")],
-        [InlineKeyboardButton(text="📊 Логи", callback_data="admin_logs")],
-        [InlineKeyboardButton(text="⬅️ Назад", callback_data="menu")]
+        [
+            InlineKeyboardButton(text="📊 Статистика", callback_data="admin_stats"),
+            InlineKeyboardButton(text="👥 Пользователи", callback_data="admin_users")
+        ],
+        [
+            InlineKeyboardButton(text="🔑 Создать ключ", callback_data="admin_gen"),
+            InlineKeyboardButton(text="📋 Все ключи", callback_data="admin_keys")
+        ],
+        [
+            InlineKeyboardButton(text="📊 Логи", callback_data="admin_logs")
+        ],
+        [
+            InlineKeyboardButton(text="⬅️ Главное меню", callback_data="menu")
+        ]
     ])
 
 def back_keyboard():
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="⬅️ Назад", callback_data="menu")]
+        [InlineKeyboardButton(text="⬅️ Назад в меню", callback_data="menu")]
     ])
 
 def payment_keyboard():
@@ -130,7 +150,7 @@ def payment_keyboard():
 
 def download_keyboard():
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="📥 Google Drive", url=DOWNLOAD_LINKS["google"])],
+        [InlineKeyboardButton(text="📥 Google Диск", url=DOWNLOAD_LINKS["google"])],
         [InlineKeyboardButton(text="📥 Яндекс.Диск", url=DOWNLOAD_LINKS["yandex"])],
         [InlineKeyboardButton(text="⬅️ Назад", callback_data="menu")]
     ])
@@ -242,7 +262,7 @@ async def menu(callback: types.CallbackQuery):
         return
     
     await callback.message.edit_text(
-        "🔥 <b>AWESOMETROLLING</b> — Главное меню",
+        "🔥 <b>AWESOMETROLLING</b> — Главное меню\n\nВыберите действие:",
         reply_markup=main_keyboard(),
         parse_mode="HTML"
     )
@@ -261,10 +281,10 @@ async def download(callback: types.CallbackQuery):
     
     text = """📥 <b>Скачать AWESOMETROLLING</b>
 
-Выберите удобный для вас способ скачивания:
+Выберите удобный способ скачивания:
 
-<b>Google Drive</b> — для пользователей Google
-<b>Яндекс.Диск</b> — для пользователей Яндекса
+📌 <b>Google Диск</b> — для пользователей Google
+📌 <b>Яндекс.Диск</b> — для пользователей Яндекса
 
 Если ссылки не работают — напишите @flidges"""
     
@@ -288,18 +308,19 @@ async def about(callback: types.CallbackQuery):
 <b>Разработчик:</b> @flidges
 
 <b>Особенности:</b>
-✅ Уникальные сообщения
+✅ Каждое сообщение уникально
+✅ Длинные связные предложения
 ✅ 60+ шаблонов
+✅ Работает при свёрнутом окне
 ✅ Автовход по ключу
 ✅ Защита HWID
 
 <b>Цена:</b> {PRICE}₽/месяц
 
-📺 <b>Обзор программы:</b>
-Смотрите видео-обзор по ссылке ниже!"""
+📺 <b>Смотрите обзор программы:</b>"""
     
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="📺 Смотреть обзор", url=REVIEW_LINK)],
+        [InlineKeyboardButton(text="📺 Смотреть обзор на YouTube", url=REVIEW_LINK)],
         [InlineKeyboardButton(text="⬅️ Назад", callback_data="menu")]
     ])
     
@@ -307,7 +328,7 @@ async def about(callback: types.CallbackQuery):
     await callback.answer()
 
 # ============================================================
-# ВСЕ ОСТАЛЬНЫЕ ФУНКЦИИ (status, buy, activate, admin и т.д.)
+# ПОКУПКА
 # ============================================================
 @dp.callback_query(F.data == "buy")
 async def buy(callback: types.CallbackQuery):
@@ -325,12 +346,12 @@ async def buy(callback: types.CallbackQuery):
 <b>Цена:</b> {PRICE}₽/месяц
 
 <b>Вы получаете:</b>
-✅ Ключ на 1 месяц
-✅ Полный доступ
-✅ Поддержка
+✅ Лицензионный ключ на 1 месяц
+✅ Полный доступ ко всем функциям
+✅ Поддержка 24/7
 
-Выберите способ оплаты:
-"""
+Выберите способ оплаты:"""
+    
     await callback.message.edit_text(text, reply_markup=payment_keyboard(), parse_mode="HTML")
     await callback.answer()
 
@@ -590,7 +611,10 @@ async def status(callback: types.CallbackQuery):
 ✅ <b>Статус:</b> Активирован
 🔑 <b>Ключ:</b> <code>{license_key}</code>
 📅 <b>Действует до:</b> {expiry.strftime('%d.%m.%Y')}
-⏳ <b>Осталось:</b> {time_left}"""
+⏳ <b>Осталось:</b> {time_left}
+
+📺 <b>Обзор программы:</b>
+{REVIEW_LINK}"""
     else:
         text = "❌ <b>У вас нет активной лицензии!</b>\n\nКупите доступ за 50₽/месяц через меню."
     await callback.message.edit_text(text, reply_markup=back_keyboard(), parse_mode="HTML")
@@ -657,8 +681,8 @@ async def activate_license(message: types.Message, state: FSMContext):
             f"✅ <b>Ключ активирован!</b>\n\n"
             f"🔑 Ключ: <code>{key}</code>\n"
             f"📅 До: {expiry.strftime('%d.%m.%Y')}\n\n"
-            f"📎 Скачай программу: /download\n"
-            f"📺 Обзор: {REVIEW_LINK}",
+            f"⬇️ <b>Скачать программу:</b> /download\n"
+            f"📺 <b>Обзор:</b> {REVIEW_LINK}",
             parse_mode="HTML",
             reply_markup=back_keyboard()
         )
@@ -689,7 +713,7 @@ async def admin_stats(callback: types.CallbackQuery):
     c.execute('SELECT COUNT(*) FROM users WHERE is_banned = 1')
     banned = c.fetchone()[0]
     conn.close()
-    text = f"📊 <b>Статистика</b>\n\n👥 Пользователей: {total}\n✅ Активных: {active}\n🚫 Забанено: {banned}"
+    text = f"📊 <b>Статистика</b>\n\n👥 Всего: {total}\n✅ Активных: {active}\n🚫 Забанено: {banned}"
     await callback.message.edit_text(text, reply_markup=admin_keyboard(), parse_mode="HTML")
     await callback.answer()
 
