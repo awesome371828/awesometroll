@@ -1,27 +1,24 @@
-import base64 as a
-import zlib as b
-import random as c
-import hashlib as d
-import sys as e
-import os as f
-import time as g
-import json as h
-import sqlite3 as i
-import uuid as j
-import subprocess as k
-import platform as l
-import threading as m
-import re as n
-import ctypes as o
-from datetime import datetime as p
-from datetime import timedelta as q
-from cryptography.fernet import Fernet as r
-from cryptography.hazmat.primitives import hashes as s
-from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC as t
-import tkinter as u
-from tkinter import scrolledtext as v
-from tkinter import ttk as w
-from tkinter import messagebox as x
+import base64
+import zlib
+import random
+import hashlib
+import sys
+import os
+import time
+import json
+import sqlite3
+import uuid
+import subprocess
+import platform
+import threading
+import re
+import ctypes
+from datetime import datetime, timedelta
+from cryptography.fernet import Fernet
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
+import tkinter as tk
+from tkinter import scrolledtext, ttk, messagebox
 
 # ============================================================
 # ШИФРОВАНИЕ СТРОК
@@ -34,24 +31,24 @@ class CryptoStrings:
     @classmethod
     def _get_key(cls, seed):
         if seed not in cls._cache:
-            kdf = t(algorithm=s.SHA512(), length=32, salt=cls._salt, iterations=500000)
-            cls._cache[seed] = a.urlsafe_b64encode(kdf.derive(str(seed).encode()))
+            kdf = PBKDF2HMAC(algorithm=hashes.SHA512(), length=32, salt=cls._salt, iterations=500000)
+            cls._cache[seed] = base64.urlsafe_b64encode(kdf.derive(str(seed).encode()))
         return cls._cache[seed]
     
     @classmethod
     def encode(cls, text, seed=None):
         if seed is None:
-            seed = c.randint(100000, 999999)
-        compressed = b.compress(text.encode('utf-8'), level=9)
-        fernet = r(cls._get_key(seed))
+            seed = random.randint(100000, 999999)
+        compressed = zlib.compress(text.encode('utf-8'), level=9)
+        fernet = Fernet(cls._get_key(seed))
         encrypted = fernet.encrypt(compressed)
-        b64 = a.b64encode(encrypted).decode('ascii')
+        b64 = base64.b64encode(encrypted).decode('ascii')
         chars = list(b64)
         for i in range(len(chars) - 1, 0, -1):
-            if c.random() > 0.7:
-                chars.insert(i, c.choice('0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz+/='))
+            if random.random() > 0.7:
+                chars.insert(i, random.choice('0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz+/='))
         obfuscated = ''.join(chars)
-        checksum = d.md5(f"{seed}:{b64}".encode()).hexdigest()[:8]
+        checksum = hashlib.md5(f"{seed}:{b64}".encode()).hexdigest()[:8]
         return f"__{checksum}__{seed}__{obfuscated}"
     
     @classmethod
@@ -67,12 +64,12 @@ class CryptoStrings:
             for char in obfuscated:
                 if char in '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz+/=':
                     b64 += char
-            if d.md5(f"{seed}:{b64}".encode()).hexdigest()[:8] != checksum:
+            if hashlib.md5(f"{seed}:{b64}".encode()).hexdigest()[:8] != checksum:
                 return encoded
-            encrypted = a.b64decode(b64)
-            fernet = r(cls._get_key(seed))
+            encrypted = base64.b64decode(b64)
+            fernet = Fernet(cls._get_key(seed))
             decrypted = fernet.decrypt(encrypted)
-            return b.decompress(decrypted).decode('utf-8')
+            return zlib.decompress(decrypted).decode('utf-8')
         except:
             return encoded
 
@@ -93,7 +90,7 @@ class SecureData:
                 'love': CryptoStrings.encode('❤️ Сделано с любовью и матом 💖'),
                 'app': CryptoStrings.encode('AWESOMETROLLING'),
                 'price': CryptoStrings.encode('😍 Цена - узнайте у @flidges'),
-                'master': CryptoStrings.encode('awesminute'),  # ← ПРАВИЛЬНЫЙ МАСТЕР-КЛЮЧ!
+                'master': CryptoStrings.encode('awesminute'),
             }
         return cls._data
     
@@ -114,20 +111,30 @@ VERSION = SecureData.get('version')
 LOVE_TEXT = SecureData.get('love')
 APP_NAME = SecureData.get('app')
 PRICE_TEXT = SecureData.get('price')
-MASTER_KEY = SecureData.get('master')  # ← БУДЕТ "awesminute"
-
-# ============================================================
-# ВСЕ ОСТАЛЬНЫЕ КЛАССЫ ТЕ ЖЕ
-# ============================================================
+MASTER_KEY = SecureData.get('master')
 
 COLORS = {
-    'bg': '#0a0e27', 'bg2': '#111638', 'bg3': '#1a1f4a', 'bg4': '#222860',
-    'bg5': '#2d3570', 'gradient_start': '#6c5ce7', 'gradient_end': '#fd79a8',
-    'accent': '#6c5ce7', 'accent2': '#a29bfe', 'pink': '#fd79a8',
-    'text': '#dfe6e9', 'text2': '#b2bec3', 'text3': '#636e72',
-    'success': '#00b894', 'danger': '#e17055', 'warning': '#fdcb6e',
-    'gold': '#ffd700', 'neon': '#00ff88', 'neon_orange': '#ff6b35',
-    'neon_blue': '#4fc3f7', 'shadow': '#1a1f4a'
+    'bg': '#0a0e27',
+    'bg2': '#111638',
+    'bg3': '#1a1f4a',
+    'bg4': '#222860',
+    'bg5': '#2d3570',
+    'gradient_start': '#6c5ce7',
+    'gradient_end': '#fd79a8',
+    'accent': '#6c5ce7',
+    'accent2': '#a29bfe',
+    'pink': '#fd79a8',
+    'text': '#dfe6e9',
+    'text2': '#b2bec3',
+    'text3': '#636e72',
+    'success': '#00b894',
+    'danger': '#e17055',
+    'warning': '#fdcb6e',
+    'gold': '#ffd700',
+    'neon': '#00ff88',
+    'neon_orange': '#ff6b35',
+    'neon_blue': '#4fc3f7',
+    'shadow': '#1a1f4a'
 }
 
 # ============================================================
@@ -139,19 +146,19 @@ class CryptoEngine:
     
     @classmethod
     def _get_salt(cls):
-        return d.sha256(a.b64decode(cls._SALT_B64)).digest()[:16]
+        return hashlib.sha256(base64.b64decode(cls._SALT_B64)).digest()[:16]
     
     @classmethod
     def _get_system_key(cls):
-        parts = [l.node(), l.processor(), l.machine(), str(f.cpu_count()), 
-                f.environ.get('PROCESSOR_IDENTIFIER', ''), f.environ.get('COMPUTERNAME', '')]
-        combined = '|'.join(parts) + a.b64decode(cls._SALT_B64).decode()
-        return d.sha512(combined.encode()).hexdigest()
+        parts = [platform.node(), platform.processor(), platform.machine(), str(os.cpu_count()), 
+                os.environ.get('PROCESSOR_IDENTIFIER', ''), os.environ.get('COMPUTERNAME', '')]
+        combined = '|'.join(parts) + base64.b64decode(cls._SALT_B64).decode()
+        return hashlib.sha512(combined.encode()).hexdigest()
     
     @classmethod
     def _derive_master_key(cls):
-        kdf = t(algorithm=s.SHA512(), length=32, salt=cls._get_salt(), iterations=300000)
-        return a.urlsafe_b64encode(kdf.derive(cls._get_system_key().encode()))
+        kdf = PBKDF2HMAC(algorithm=hashes.SHA512(), length=32, salt=cls._get_salt(), iterations=300000)
+        return base64.urlsafe_b64encode(kdf.derive(cls._get_system_key().encode()))
     
     @classmethod
     def encrypt(cls, data):
@@ -159,9 +166,9 @@ class CryptoEngine:
         try:
             if isinstance(data, str): data = data.encode('utf-8')
             elif not isinstance(data, bytes): data = str(data).encode('utf-8')
-            return r(cls._derive_master_key()).encrypt(data)
+            return Fernet(cls._derive_master_key()).encrypt(data)
         except:
-            key = d.sha512(cls._get_system_key().encode()).digest()
+            key = hashlib.sha512(cls._get_system_key().encode()).digest()
             result = bytearray()
             for i, byte in enumerate(data):
                 result.append(byte ^ key[i % len(key)])
@@ -172,11 +179,11 @@ class CryptoEngine:
         if encrypted_data is None: return None
         try:
             if isinstance(encrypted_data, str): encrypted_data = encrypted_data.encode('utf-8')
-            decrypted = r(cls._derive_master_key()).decrypt(encrypted_data)
+            decrypted = Fernet(cls._derive_master_key()).decrypt(encrypted_data)
             try: return decrypted.decode('utf-8')
             except: return decrypted
         except:
-            key = d.sha512(cls._get_system_key().encode()).digest()
+            key = hashlib.sha512(cls._get_system_key().encode()).digest()
             result = bytearray()
             for i, byte in enumerate(encrypted_data):
                 result.append(byte ^ key[i % len(key)])
@@ -188,15 +195,15 @@ class CryptoEngine:
 # ============================================================
 
 def get_app_dir():
-    if getattr(e, 'frozen', False):
-        return f.dirname(e.executable)
+    if getattr(sys, 'frozen', False):
+        return os.path.dirname(sys.executable)
     else:
-        return f.dirname(f.abspath(__file__))
+        return os.path.dirname(os.path.abspath(__file__))
 
 APP_DIR = get_app_dir()
-DB_FILE = f.join(APP_DIR, "troll_users.db")
-SETTINGS_FILE = f.join(APP_DIR, "troll_settings.json")
-LICENSE_FILE = f.join(APP_DIR, "license.key")
+DB_FILE = os.path.join(APP_DIR, "troll_users.db")
+SETTINGS_FILE = os.path.join(APP_DIR, "troll_settings.json")
+LICENSE_FILE = os.path.join(APP_DIR, "license.key")
 
 # ============================================================
 # HWID
@@ -206,7 +213,7 @@ class ComputerID:
     @staticmethod
     def get_mac():
         try:
-            mac = j.getnode()
+            mac = uuid.getnode()
             return ':'.join(('%012x' % mac)[i:i+2] for i in range(0, 12, 2))
         except:
             return "unknown_mac"
@@ -214,22 +221,22 @@ class ComputerID:
     @staticmethod
     def get_computer_name():
         try:
-            return f.environ.get('COMPUTERNAME', 'unknown')
+            return os.environ.get('COMPUTERNAME', 'unknown')
         except:
             return "unknown"
     
     @staticmethod
     def get_username():
         try:
-            return f.environ.get('USERNAME', 'unknown')
+            return os.environ.get('USERNAME', 'unknown')
         except:
             return "unknown"
     
     @staticmethod
     def get_disk_serial():
         try:
-            if l.system() == 'Windows':
-                result = k.run(['wmic', 'diskdrive', 'get', 'serialnumber'], capture_output=True, text=True)
+            if platform.system() == 'Windows':
+                result = subprocess.run(['wmic', 'diskdrive', 'get', 'serialnumber'], capture_output=True, text=True)
                 lines = result.stdout.strip().split('\n')
                 if len(lines) > 1:
                     return lines[1].strip()
@@ -240,8 +247,8 @@ class ComputerID:
     @staticmethod
     def get_cpu_id():
         try:
-            if l.system() == 'Windows':
-                result = k.run(['wmic', 'cpu', 'get', 'processorid'], capture_output=True, text=True)
+            if platform.system() == 'Windows':
+                result = subprocess.run(['wmic', 'cpu', 'get', 'processorid'], capture_output=True, text=True)
                 lines = result.stdout.strip().split('\n')
                 if len(lines) > 1:
                     return lines[1].strip()
@@ -252,9 +259,9 @@ class ComputerID:
     @staticmethod
     def get_full_hwid():
         data = (ComputerID.get_mac() + ComputerID.get_computer_name() + ComputerID.get_username() + 
-                ComputerID.get_disk_serial() + ComputerID.get_cpu_id() + l.processor() + l.machine())
+                ComputerID.get_disk_serial() + ComputerID.get_cpu_id() + platform.processor() + platform.machine())
         encrypted = CryptoEngine.encrypt(data)
-        return d.sha512(encrypted).hexdigest()[:64]
+        return hashlib.sha512(encrypted).hexdigest()[:64]
 
 # ============================================================
 # БАЗА ДАННЫХ
@@ -262,7 +269,7 @@ class ComputerID:
 
 class UserDB:
     def __init__(self):
-        self.conn = i.connect(DB_FILE)
+        self.conn = sqlite3.connect(DB_FILE)
         self.cursor = self.conn.cursor()
         self.create_tables()
     
@@ -307,32 +314,32 @@ class UserDB:
     def save_license(self, key):
         encrypted_key = CryptoEngine.encrypt(key)
         with open(LICENSE_FILE, 'w') as f:
-            f.write(a.b64encode(encrypted_key).decode('utf-8'))
+            f.write(base64.b64encode(encrypted_key).decode('utf-8'))
     
     def load_license(self):
-        if f.exists(LICENSE_FILE):
+        if os.path.exists(LICENSE_FILE):
             try:
                 with open(LICENSE_FILE, 'r') as f:
-                    encrypted_key = a.b64decode(f.read().strip().encode('utf-8'))
+                    encrypted_key = base64.b64decode(f.read().strip().encode('utf-8'))
                 return CryptoEngine.decrypt(encrypted_key)
             except:
                 return None
         return None
     
     def delete_license(self):
-        if f.exists(LICENSE_FILE):
-            f.remove(LICENSE_FILE)
+        if os.path.exists(LICENSE_FILE):
+            os.remove(LICENSE_FILE)
     
     def generate_key(self, months=1, custom_key=None):
-        key = custom_key if custom_key else d.sha256(f"{j.uuid4()}{g.time()}".encode()).hexdigest()[:12].upper()
-        created_at = p.now().isoformat()
-        expires_at = (p.now() + q(days=30 * months)).isoformat()
+        key = custom_key if custom_key else hashlib.sha256(f"{uuid.uuid4()}{time.time()}".encode()).hexdigest()[:12].upper()
+        created_at = datetime.now().isoformat()
+        expires_at = (datetime.now() + timedelta(days=30 * months)).isoformat()
         try:
             self.cursor.execute('INSERT INTO license_keys (key_text, created_at, expires_at, is_used) VALUES (?, ?, ?, 0)', 
                                (CryptoEngine.encrypt(key), CryptoEngine.encrypt(created_at), CryptoEngine.encrypt(expires_at)))
             self.conn.commit()
             return True, key
-        except i.IntegrityError:
+        except sqlite3.IntegrityError:
             return False, None
     
     def delete_key(self, key_text):
@@ -357,7 +364,7 @@ class UserDB:
                                    (encrypted_username, encrypted_expires, encrypted_key, encrypted_hwid))
             else:
                 self.cursor.execute('INSERT INTO users (username, hwid, is_admin, created_at, expires_at, saved_key) VALUES (?, ?, 1, ?, ?, ?)',
-                                   (encrypted_username, encrypted_hwid, CryptoEngine.encrypt(p.now().isoformat()), encrypted_expires, encrypted_key))
+                                   (encrypted_username, encrypted_hwid, CryptoEngine.encrypt(datetime.now().isoformat()), encrypted_expires, encrypted_key))
             self.conn.commit()
             if save:
                 self.save_license(key_upper)
@@ -378,12 +385,12 @@ class UserDB:
         if is_used and used_hwid == hwid:
             return True, "✅ ДОСТУП УЖЕ АКТИВИРОВАН НА ЭТОМ КОМПЬЮТЕРЕ!"
         
-        expiry = p.fromisoformat(expires_at)
-        if p.now() > expiry:
+        expiry = datetime.fromisoformat(expires_at)
+        if datetime.now() > expiry:
             return False, f"❌ КЛЮЧ ИСТЕК {expiry.strftime('%d.%m.%Y')}!"
         
         self.cursor.execute('UPDATE license_keys SET used_by = ?, used_hwid = ?, used_at = ?, is_used = 1 WHERE key_text = ?',
-                           (CryptoEngine.encrypt(username), CryptoEngine.encrypt(hwid), CryptoEngine.encrypt(p.now().isoformat()), encrypted_key))
+                           (CryptoEngine.encrypt(username), CryptoEngine.encrypt(hwid), CryptoEngine.encrypt(datetime.now().isoformat()), encrypted_key))
         
         user = self.cursor.execute('SELECT * FROM users WHERE hwid = ?', (CryptoEngine.encrypt(hwid),)).fetchone()
         if user:
@@ -391,7 +398,7 @@ class UserDB:
                                (CryptoEngine.encrypt(username), expires_enc, encrypted_key, CryptoEngine.encrypt(hwid)))
         else:
             self.cursor.execute('INSERT INTO users (username, hwid, created_at, expires_at, saved_key) VALUES (?, ?, ?, ?, ?)',
-                               (CryptoEngine.encrypt(username), CryptoEngine.encrypt(hwid), CryptoEngine.encrypt(p.now().isoformat()), expires_enc, encrypted_key))
+                               (CryptoEngine.encrypt(username), CryptoEngine.encrypt(hwid), CryptoEngine.encrypt(datetime.now().isoformat()), expires_enc, encrypted_key))
         
         self.conn.commit()
         if save:
@@ -419,11 +426,11 @@ class UserDB:
         
         if is_banned:
             return False, "🚫 ДОСТУП ЗАБЛОКИРОВАН!"
-        expiry = p.fromisoformat(expires_at)
-        if p.now() > expiry:
+        expiry = datetime.fromisoformat(expires_at)
+        if datetime.now() > expiry:
             return False, f"⏰ ПОДПИСКА ИСТЕКЛА {expiry.strftime('%d.%m.%Y')}!"
         
-        self.cursor.execute('UPDATE users SET last_active = ? WHERE hwid = ?', (CryptoEngine.encrypt(p.now().isoformat()), encrypted_hwid))
+        self.cursor.execute('UPDATE users SET last_active = ? WHERE hwid = ?', (CryptoEngine.encrypt(datetime.now().isoformat()), encrypted_hwid))
         self.conn.commit()
         return True, username
     
@@ -448,7 +455,7 @@ class UserDB:
         return decrypted_keys
     
     def give_access(self, username, months=1):
-        expires_at = (p.now() + q(days=30 * months)).isoformat()
+        expires_at = (datetime.now() + timedelta(days=30 * months)).isoformat()
         encrypted_username = CryptoEngine.encrypt(username)
         encrypted_expires = CryptoEngine.encrypt(expires_at)
         
@@ -458,7 +465,7 @@ class UserDB:
                                (encrypted_expires, encrypted_username))
         else:
             self.cursor.execute('INSERT INTO users (username, hwid, created_at, expires_at) VALUES (?, ?, ?, ?)',
-                               (encrypted_username, CryptoEngine.encrypt(f"MANUAL_{j.uuid4().hex[:8]}"), CryptoEngine.encrypt(p.now().isoformat()), encrypted_expires))
+                               (encrypted_username, CryptoEngine.encrypt(f"MANUAL_{uuid.uuid4().hex[:8]}"), CryptoEngine.encrypt(datetime.now().isoformat()), encrypted_expires))
         self.conn.commit()
         return True, f"✅ ДОСТУП ВЫДАН {username} НА {months} МЕСЯЦЕВ!"
     
@@ -477,7 +484,7 @@ class UserDB:
         if result:
             expires_enc = result[0]
             expires_at = CryptoEngine.decrypt(expires_enc)
-            new_expiry = p.fromisoformat(expires_at) + q(days=30 * months)
+            new_expiry = datetime.fromisoformat(expires_at) + timedelta(days=30 * months)
             self.cursor.execute('UPDATE users SET expires_at = ? WHERE username = ?', 
                                (CryptoEngine.encrypt(new_expiry.isoformat()), CryptoEngine.encrypt(username)))
             self.conn.commit()
@@ -492,7 +499,7 @@ db = UserDB()
 
 def hide_console():
     try:
-        o.windll.user32.ShowWindow(o.windll.kernel32.GetConsoleWindow(), 0)
+        ctypes.windll.user32.ShowWindow(ctypes.windll.kernel32.GetConsoleWindow(), 0)
     except:
         pass
 
@@ -535,14 +542,14 @@ def generate_insult():
     if not template_pool:
         template_pool = INSULT_TEMPLATES.copy()
         used_templates = []
-    insult = c.choice(template_pool)
+    insult = random.choice(template_pool)
     template_pool.remove(insult)
     used_templates.append(insult)
     return insult
 
 def generate_break_insult():
     insult = generate_insult()
-    insult = n.sub(r'[.,!?;:()"\']', '', insult)
+    insult = re.sub(r'[.,!?;:()"\']', '', insult)
     words = insult.split()
     banned = settings.get('banned_words', [])
     words = [w for w in words if w not in banned]
@@ -569,10 +576,10 @@ def spam_words():
     stop_spam = False
     message_count = 0
     total_messages_sent = 0
-    start_time = g.time()
+    start_time = time.time()
     while not stop_spam:
         if is_paused:
-            g.sleep(0.1)
+            time.sleep(0.1)
             continue
         words = generate_break_insult()
         for word in words:
@@ -582,9 +589,9 @@ def spam_words():
                 break
             try:
                 keyboard.write(word)
-                g.sleep(spam_speed)
+                time.sleep(spam_speed)
                 keyboard.press_and_release('enter')
-                g.sleep(settings.get('pause_between_messages', 0.01))
+                time.sleep(settings.get('pause_between_messages', 0.01))
                 message_count += 1
                 total_messages_sent += 1
                 if app_instance:
@@ -597,7 +604,7 @@ def start_spam():
     if spam_thread and spam_thread.is_alive():
         return
     stop_spam = False
-    spam_thread = m.Thread(target=spam_words)
+    spam_thread = threading.Thread(target=spam_words)
     spam_thread.daemon = True
     spam_thread.start()
     if app_instance:
@@ -616,10 +623,10 @@ def toggle_pause():
         app_instance.update_ui_state()
     return is_paused
 
-class GlowButton(u.Button):
+class GlowButton(tk.Button):
     def __init__(self, master, **kwargs):
         super().__init__(master, **kwargs)
-        self.config(relief=u.FLAT, borderwidth=0, font=("Segoe UI", 10, "bold"), cursor="hand2")
+        self.config(relief=tk.FLAT, borderwidth=0, font=("Segoe UI", 10, "bold"), cursor="hand2")
         self.default_bg = self['bg']
         self.default_fg = self['fg']
         self.bind('<Enter>', self.on_enter)
@@ -633,8 +640,8 @@ class GlowButton(u.Button):
         self.config(bg=self.default_bg, fg=self.default_fg)
     
     def on_click(self, e):
-        self.config(relief=u.SUNKEN)
-        self.after(100, lambda: self.config(relief=u.FLAT))
+        self.config(relief=tk.SUNKEN)
+        self.after(100, lambda: self.config(relief=tk.FLAT))
 
 # ============================================================
 # ОКНО АКТИВАЦИИ
@@ -642,87 +649,87 @@ class GlowButton(u.Button):
 
 class ActivationWindow:
     def __init__(self):
-        self.window = u.Tk()
+        self.window = tk.Tk()
         self.window.title(f"🔐 АКТИВАЦИЯ | {APP_NAME}")
         self.window.geometry("600x580")
         self.window.configure(bg=COLORS['bg'])
         self.window.resizable(False, False)
-        self.window.protocol("WM_DELETE_WINDOW", e.exit)
+        self.window.protocol("WM_DELETE_WINDOW", sys.exit)
         
-        shadow = u.Frame(self.window, bg=COLORS['shadow'], width=580, height=560)
+        shadow = tk.Frame(self.window, bg=COLORS['shadow'], width=580, height=560)
         shadow.place(x=10, y=10)
         
-        main_frame = u.Frame(self.window, bg=COLORS['bg2'], width=580, height=560)
+        main_frame = tk.Frame(self.window, bg=COLORS['bg2'], width=580, height=560)
         main_frame.place(x=10, y=10)
         
-        grad = u.Frame(main_frame, bg=COLORS['gradient_start'], height=4)
-        grad.pack(fill=u.X, padx=0, pady=0)
+        grad = tk.Frame(main_frame, bg=COLORS['gradient_start'], height=4)
+        grad.pack(fill=tk.X, padx=0, pady=0)
         
-        header = u.Frame(main_frame, bg=COLORS['bg2'])
-        header.pack(fill=u.X, padx=30, pady=(20,5))
+        header = tk.Frame(main_frame, bg=COLORS['bg2'])
+        header.pack(fill=tk.X, padx=30, pady=(20,5))
         
-        u.Label(header, text=f"🔥 {APP_NAME}", font=("Segoe UI", 22, "bold"), bg=COLORS['bg2'], fg=COLORS['gold']).pack()
-        u.Label(header, text="🔐 АКТИВАЦИЯ ПРОГРАММЫ", font=("Segoe UI", 12), bg=COLORS['bg2'], fg=COLORS['text2']).pack()
+        tk.Label(header, text=f"🔥 {APP_NAME}", font=("Segoe UI", 22, "bold"), bg=COLORS['bg2'], fg=COLORS['gold']).pack()
+        tk.Label(header, text="🔐 АКТИВАЦИЯ ПРОГРАММЫ", font=("Segoe UI", 12), bg=COLORS['bg2'], fg=COLORS['text2']).pack()
         
-        info_frame = u.Frame(main_frame, bg=COLORS['bg3'])
-        info_frame.pack(pady=10, padx=30, fill=u.X)
+        info_frame = tk.Frame(main_frame, bg=COLORS['bg3'])
+        info_frame.pack(pady=10, padx=30, fill=tk.X)
         info_frame.config(height=80)
         info_frame.pack_propagate(False)
         
-        info_inner = u.Frame(info_frame, bg=COLORS['bg3'])
-        info_inner.pack(fill=u.BOTH, padx=15, pady=10)
+        info_inner = tk.Frame(info_frame, bg=COLORS['bg3'])
+        info_inner.pack(fill=tk.BOTH, padx=15, pady=10)
         
-        u.Label(info_inner, text=f"💻 Компьютер: {ComputerID.get_username()}", bg=COLORS['bg3'], fg=COLORS['text'], font=("Segoe UI", 11)).pack(anchor='w')
-        u.Label(info_inner, text=f"🆔 HWID: {ComputerID.get_full_hwid()[:24]}...", bg=COLORS['bg3'], fg=COLORS['text2'], font=("Segoe UI", 9)).pack(anchor='w')
+        tk.Label(info_inner, text=f"💻 Компьютер: {ComputerID.get_username()}", bg=COLORS['bg3'], fg=COLORS['text'], font=("Segoe UI", 11)).pack(anchor='w')
+        tk.Label(info_inner, text=f"🆔 HWID: {ComputerID.get_full_hwid()[:24]}...", bg=COLORS['bg3'], fg=COLORS['text2'], font=("Segoe UI", 9)).pack(anchor='w')
         
-        center_frame = u.Frame(main_frame, bg=COLORS['bg2'])
-        center_frame.pack(pady=15, padx=30, fill=u.BOTH, expand=True)
+        center_frame = tk.Frame(main_frame, bg=COLORS['bg2'])
+        center_frame.pack(pady=15, padx=30, fill=tk.BOTH, expand=True)
         
-        u.Label(center_frame, text="⚡ КУПИ ДОСТУП ⚡", font=("Segoe UI", 20, "bold"), bg=COLORS['bg2'], fg=COLORS['neon_orange']).pack()
-        u.Label(center_frame, text="У ВЛАДЕЛЬЦА", font=("Segoe UI", 12), bg=COLORS['bg2'], fg=COLORS['text']).pack()
+        tk.Label(center_frame, text="⚡ КУПИ ДОСТУП ⚡", font=("Segoe UI", 20, "bold"), bg=COLORS['bg2'], fg=COLORS['neon_orange']).pack()
+        tk.Label(center_frame, text="У ВЛАДЕЛЬЦА", font=("Segoe UI", 12), bg=COLORS['bg2'], fg=COLORS['text']).pack()
         
-        contact_frame = u.Frame(center_frame, bg=COLORS['bg4'])
-        contact_frame.pack(pady=8, padx=20, fill=u.X)
+        contact_frame = tk.Frame(center_frame, bg=COLORS['bg4'])
+        contact_frame.pack(pady=8, padx=20, fill=tk.X)
         contact_frame.config(height=50)
         contact_frame.pack_propagate(False)
         
-        contact_inner = u.Frame(contact_frame, bg=COLORS['bg4'])
-        contact_inner.pack(fill=u.BOTH, padx=10, pady=5)
+        contact_inner = tk.Frame(contact_frame, bg=COLORS['bg4'])
+        contact_inner.pack(fill=tk.BOTH, padx=10, pady=5)
         
-        u.Label(contact_inner, text="🔥 @flidges 🔥", font=("Segoe UI", 16, "bold"), bg=COLORS['bg4'], fg=COLORS['gold']).pack(side=u.LEFT)
-        u.Label(contact_inner, text="📩 Telegram", font=("Segoe UI", 10), bg=COLORS['bg4'], fg=COLORS['neon_blue']).pack(side=u.RIGHT)
+        tk.Label(contact_inner, text="🔥 @flidges 🔥", font=("Segoe UI", 16, "bold"), bg=COLORS['bg4'], fg=COLORS['gold']).pack(side=tk.LEFT)
+        tk.Label(contact_inner, text="📩 Telegram", font=("Segoe UI", 10), bg=COLORS['bg4'], fg=COLORS['neon_blue']).pack(side=tk.RIGHT)
         
-        u.Label(center_frame, text=PRICE_TEXT, font=("Segoe UI", 12, "bold"), bg=COLORS['bg2'], fg=COLORS['neon']).pack(pady=5)
+        tk.Label(center_frame, text=PRICE_TEXT, font=("Segoe UI", 12, "bold"), bg=COLORS['bg2'], fg=COLORS['neon']).pack(pady=5)
         
-        sep = u.Frame(center_frame, bg=COLORS['text3'], height=1, width=300)
+        sep = tk.Frame(center_frame, bg=COLORS['text3'], height=1, width=300)
         sep.pack(pady=10)
         
-        key_frame = u.Frame(center_frame, bg=COLORS['bg2'])
-        key_frame.pack(pady=10, fill=u.X)
+        key_frame = tk.Frame(center_frame, bg=COLORS['bg2'])
+        key_frame.pack(pady=10, fill=tk.X)
         
-        u.Label(key_frame, text="Или введите ключ активации:", bg=COLORS['bg2'], fg=COLORS['text2'], font=("Segoe UI", 10)).pack(anchor='w')
+        tk.Label(key_frame, text="Или введите ключ активации:", bg=COLORS['bg2'], fg=COLORS['text2'], font=("Segoe UI", 10)).pack(anchor='w')
         
-        entry_frame = u.Frame(key_frame, bg=COLORS['bg2'])
-        entry_frame.pack(fill=u.X, pady=5)
+        entry_frame = tk.Frame(key_frame, bg=COLORS['bg2'])
+        entry_frame.pack(fill=tk.X, pady=5)
         
-        self.key_entry = u.Entry(entry_frame, bg=COLORS['bg3'], fg=COLORS['neon'], font=("Segoe UI", 14), relief=u.FLAT, borderwidth=2, insertbackground=COLORS['text'])
-        self.key_entry.pack(side=u.LEFT, fill=u.X, expand=True, padx=(0,10))
+        self.key_entry = tk.Entry(entry_frame, bg=COLORS['bg3'], fg=COLORS['neon'], font=("Segoe UI", 14), relief=tk.FLAT, borderwidth=2, insertbackground=COLORS['text'])
+        self.key_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0,10))
         self.key_entry.bind('<Return>', lambda e: self.activate())
         
-        self.activate_btn = u.Button(entry_frame, text="✅ АКТИВИРОВАТЬ", command=self.activate, bg=COLORS['gradient_start'], fg='white', font=("Segoe UI", 10, "bold"), relief=u.FLAT, cursor="hand2", padx=15, pady=8)
-        self.activate_btn.pack(side=u.RIGHT)
+        self.activate_btn = tk.Button(entry_frame, text="✅ АКТИВИРОВАТЬ", command=self.activate, bg=COLORS['gradient_start'], fg='white', font=("Segoe UI", 10, "bold"), relief=tk.FLAT, cursor="hand2", padx=15, pady=8)
+        self.activate_btn.pack(side=tk.RIGHT)
         
-        self.status_frame = u.Frame(center_frame, bg=COLORS['bg2'], height=50)
-        self.status_frame.pack(fill=u.X, pady=5)
+        self.status_frame = tk.Frame(center_frame, bg=COLORS['bg2'], height=50)
+        self.status_frame.pack(fill=tk.X, pady=5)
         self.status_frame.pack_propagate(False)
         
-        self.status_label = u.Label(self.status_frame, text="", bg=COLORS['bg2'], fg=COLORS['danger'], font=("Segoe UI", 11, "bold"))
-        self.status_label.pack(fill=u.BOTH, expand=True)
+        self.status_label = tk.Label(self.status_frame, text="", bg=COLORS['bg2'], fg=COLORS['danger'], font=("Segoe UI", 11, "bold"))
+        self.status_label.pack(fill=tk.BOTH, expand=True)
         
-        footer = u.Frame(main_frame, bg=COLORS['bg2'])
-        footer.pack(side=u.BOTTOM, fill=u.X, pady=10)
+        footer = tk.Frame(main_frame, bg=COLORS['bg2'])
+        footer.pack(side=tk.BOTTOM, fill=tk.X, pady=10)
         
-        u.Label(footer, text=f"© 2026 {DEVELOPER} | Версия {VERSION}", bg=COLORS['bg2'], fg=COLORS['text3'], font=("Segoe UI", 8)).pack()
+        tk.Label(footer, text=f"© 2026 {DEVELOPER} | Версия {VERSION}", bg=COLORS['bg2'], fg=COLORS['text3'], font=("Segoe UI", 8)).pack()
         
         self.window.mainloop()
     
@@ -750,20 +757,20 @@ class ActivationWindow:
 
 def start_program():
     hide_console()
-    root = u.Tk()
+    root = tk.Tk()
     root.title(f"🔥 {APP_NAME} | {DEVELOPER}")
     root.geometry("800x650")
     root.configure(bg=COLORS['bg'])
     root.minsize(700, 550)
     root.resizable(True, True)
     
-    u.Label(root, text=f"🔥 {APP_NAME}", font=("Segoe UI", 40, "bold"), bg=COLORS['bg'], fg=COLORS['gold']).pack(pady=50)
-    u.Label(root, text=CREATOR_TEXT, font=("Segoe UI", 16), bg=COLORS['bg'], fg=COLORS['neon_orange']).pack()
-    u.Label(root, text=LOVE_TEXT, font=("Segoe UI", 14), bg=COLORS['bg'], fg=COLORS['pink']).pack(pady=20)
-    u.Label(root, text=f"Версия: {VERSION}", font=("Segoe UI", 12), bg=COLORS['bg'], fg=COLORS['text2']).pack()
-    u.Label(root, text=f"Мастер-ключ: {MASTER_KEY}", font=("Segoe UI", 14, "bold"), bg=COLORS['bg'], fg=COLORS['neon']).pack(pady=10)
+    tk.Label(root, text=f"🔥 {APP_NAME}", font=("Segoe UI", 40, "bold"), bg=COLORS['bg'], fg=COLORS['gold']).pack(pady=50)
+    tk.Label(root, text=CREATOR_TEXT, font=("Segoe UI", 16), bg=COLORS['bg'], fg=COLORS['neon_orange']).pack()
+    tk.Label(root, text=LOVE_TEXT, font=("Segoe UI", 14), bg=COLORS['bg'], fg=COLORS['pink']).pack(pady=20)
+    tk.Label(root, text=f"Версия: {VERSION}", font=("Segoe UI", 12), bg=COLORS['bg'], fg=COLORS['text2']).pack()
+    tk.Label(root, text=f"Мастер-ключ: {MASTER_KEY}", font=("Segoe UI", 14, "bold"), bg=COLORS['bg'], fg=COLORS['neon']).pack(pady=10)
     
-    u.Button(root, text="Выход", command=root.quit, bg=COLORS['danger'], fg='white', font=("Segoe UI", 10, "bold"), relief=u.FLAT, cursor="hand2", padx=20, pady=10).pack(pady=30)
+    tk.Button(root, text="Выход", command=root.quit, bg=COLORS['danger'], fg='white', font=("Segoe UI", 10, "bold"), relief=tk.FLAT, cursor="hand2", padx=20, pady=10).pack(pady=30)
     
     root.mainloop()
 
