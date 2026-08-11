@@ -72,7 +72,7 @@ class CryptoStrings:
             return encoded
 
 # ============================================================
-# ЗАЩИЩЕННЫЕ ДАННЫЕ (МАСТЕР-КЛЮЧ ЗАШИФРОВАН)
+# ЗАЩИЩЕННЫЕ ДАННЫЕ
 # ============================================================
 
 class SecureData:
@@ -468,13 +468,12 @@ class UserDB:
 db = UserDB()
 
 # ============================================================
-# АВТОМАТИЧЕСКАЯ АКТИВАЦИЯ ДЛЯ GITHUB ACTIONS
+# АВТОМАТИЧЕСКАЯ АКТИВАЦИЯ
 # ============================================================
 
 def auto_activate():
-    """Автоматическая активация через переменную окружения или мастер-ключ"""
+    """Автоматическая активация"""
     
-    # 1. Пробуем через переменную окружения
     env_key = os.environ.get('ACTIVATION_KEY', '')
     if env_key:
         print(f"🔑 Использую ключ из переменной окружения")
@@ -482,24 +481,19 @@ def auto_activate():
         if success:
             print(f"✅ {msg}")
             return True
-        else:
-            print(f"❌ {msg}")
     
-    # 2. Пробуем мастер-ключ
     print(f"🔑 Пробую мастер-ключ: {MASTER_KEY}")
     success, msg = db.activate_key(MASTER_KEY)
     if success:
         print(f"✅ {msg}")
         return True
     
-    # 3. Пробуем загруженную лицензию
     success, msg = db.check_access_auto()
     if success:
         print(f"✅ {msg}")
         return True
     
     print(f"❌ Не удалось активировать программу!")
-    print(f"ℹ️ {msg}")
     return False
 
 # ============================================================
@@ -512,18 +506,16 @@ if __name__ == "__main__":
     print(f"{CREATOR_TEXT}")
     print("="*50)
     
-    # Автоматическая активация
     if auto_activate():
         print("✅ Программа успешно активирована!")
         print("="*50)
-        print("📊 Статистика:")
+        
         users = db.get_all_users()
         keys = db.get_all_keys()
         print(f"👥 Пользователей: {len(users)}")
         print(f"🔑 Ключей: {len(keys)}")
         print("="*50)
         
-        # Проверяем доступ
         access, username = db.check_access()
         if access:
             print(f"✅ Доступ разрешен для: {username}")
