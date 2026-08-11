@@ -21,90 +21,15 @@ from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 
 # ============================================================
-# ВСЕ СТРОКИ ЗАШИФРОВАНЫ!
-# ============================================================
-
-class _:
-    _c = {}
-    _s = b'\x7f\x8e\x9a\x1b\x2c\x3d\x4e\x5f\x6a\x7b\x8c\x9d\xae\xbf\xc1\xd2'
-    @classmethod
-    def _(cls, k):
-        if k not in cls._c:
-            _ = PBKDF2HMAC(algorithm=hashes.SHA512(), length=32, salt=cls._s, iterations=500000)
-            cls._c[k] = base64.urlsafe_b64encode(_.derive(str(k).encode()))
-        return cls._c[k]
-    @classmethod
-    def __(cls, t, s=None):
-        if s is None: s = random.randint(100000, 999999)
-        _ = zlib.compress(t.encode('utf-8'), level=9)
-        __ = Fernet(cls._(s)).encrypt(_)
-        ___ = base64.b64encode(__).decode('ascii')
-        ____ = list(___)
-        for _____ in range(len(____) - 1, 0, -1):
-            if random.random() > 0.7:
-                ____.insert(_____, random.choice('0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz+/='))
-        _____ = ''.join(____)
-        ______ = hashlib.md5(f"{s}:{___}".encode()).hexdigest()[:8]
-        return f"__{______}__{s}__{_____}"
-    @classmethod
-    def ___(cls, e):
-        try:
-            _ = e.split('__')
-            if len(_) < 4: return e
-            __ = _[1]; ___ = int(_[2]); ____ = _[3]
-            _____ = ''
-            for ______ in ____:
-                if ______ in '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz+/=':
-                    _____ += ______
-            if hashlib.md5(f"{___}:{_____}".encode()).hexdigest()[:8] != __: return e
-            ______ = base64.b64decode(_____)
-            _______ = Fernet(cls._(___)).decrypt(______)
-            return zlib.decompress(_______).decode('utf-8')
-        except: return e
-
-class __:
-    _ = None
-    @classmethod
-    def _(cls):
-        if cls._ is None:
-            cls._ = {
-                'a': _.__('@flidges'),
-                'b': _.__('✨ Создатель: awesome / tg @flidges ✨'),
-                'c': _.__('3.0'),
-                'd': _.__('💜 Сделано с любовью и матом 💜'),
-                'e': _.__('AWESOMETROLLING'),
-                'f': _.__('💰 Цена - узнайте у @flidges'),
-                'g': _.__('awesminute'),
-                'h': _.__('⚙️ АДМИН-ПАНЕЛЬ (F6)'),
-                'i': _.__('⛶ ПОЛНЫЙ ЭКРАН (F11)'),
-                'j': _.__('🚪 ВЫЙТИ ИЗ АККАУНТА'),
-                'k': _.__('🤖 СТАРТ (F3)'),
-                'l': _.__('🛑 СТОП (F4)'),
-                'm': _.__('⏸️ ПАУЗА (F5)'),
-                'n': _.__('⏸️ Ожидание...'),
-                'o': _.__('📨 '),
-                'p': _.__('Только для администраторов!'),
-                'q': _.__('Доступ запрещен'),
-                'r': _.__('Выход из аккаунта'),
-                's': _.__('Вы уверены, что хотите выйти из аккаунта?\nКлюч будет удалён, и вам нужно будет ввести его заново.'),
-            }
-        return cls._
-    @classmethod
-    def __(cls, k):
-        try: return _.___(cls._().get(k, ''))
-        except: return ""
-
-# ============================================================
 # КОНСТАНТЫ
 # ============================================================
-
-DEVELOPER = __.__('a')
-CREATOR_TEXT = __.__('b')
-VERSION = __.__('c')
-LOVE_TEXT = __.__('d')
-APP_NAME = __.__('e')
-PRICE_TEXT = __.__('f')
-MASTER_KEY = __.__('g')
+DEVELOPER = "@flidges"
+CREATOR_TEXT = "✨ Создатель: awesome / tg @flidges ✨"
+VERSION = "3.0"
+LOVE_TEXT = "💜 Сделано с любовью и матом 💜"
+APP_NAME = "AWESOMETROLLING"
+PRICE_TEXT = "💰 Цена - узнайте у @flidges"
+MASTER_KEY = "awesminute"
 
 COLORS = {
     'bg': '#0a0e27', 'bg2': '#111638', 'bg3': '#1a1f4a', 'bg4': '#222860',
@@ -117,24 +42,28 @@ COLORS = {
 }
 
 # ============================================================
-# ШИФРОВАНИЕ ДАННЫХ
+# ШИФРОВАНИЕ
 # ============================================================
 
 class CryptoEngine:
     _SALT_B64 = b'YXdlc29tZXBsb2swMQ=='
+    
     @classmethod
     def _get_salt(cls):
         return hashlib.sha256(base64.b64decode(cls._SALT_B64)).digest()[:16]
+    
     @classmethod
     def _get_system_key(cls):
         parts = [platform.node(), platform.processor(), platform.machine(), str(os.cpu_count()), 
                 os.environ.get('PROCESSOR_IDENTIFIER', ''), os.environ.get('COMPUTERNAME', '')]
         combined = '|'.join(parts) + base64.b64decode(cls._SALT_B64).decode()
         return hashlib.sha512(combined.encode()).hexdigest()
+    
     @classmethod
     def _derive_master_key(cls):
         kdf = PBKDF2HMAC(algorithm=hashes.SHA512(), length=32, salt=cls._get_salt(), iterations=300000)
         return base64.urlsafe_b64encode(kdf.derive(cls._get_system_key().encode()))
+    
     @classmethod
     def encrypt(cls, data):
         if data is None: return None
@@ -148,6 +77,7 @@ class CryptoEngine:
             for i, byte in enumerate(data):
                 result.append(byte ^ key[i % len(key)])
             return bytes(result)
+    
     @classmethod
     def decrypt(cls, encrypted_data):
         if encrypted_data is None: return None
@@ -410,6 +340,27 @@ INSULT_TEMPLATES = [
     "я твою мать в жопу ебал пока ты тут сопли свои распускал а ты сынок шлюхи на меня рот открыл",
     "я твою мать нахуй послал и она там осталась а ты гандон сраный тут мне перечить вздумал",
     "я твою мать расчленил нахуй и по кускам разбросал а ты чурка ебаный на меня пасть открываешь",
+    "я твоего отца отпиздил ногами и хуем пронзил насквозь а ты хуесос ебаный тут мне пиздишь",
+    "я твоего батю своим членом насадил как шашлык а ты сынок шалавы тут мне слова поперек сказать пытаешься",
+    "я твоего отца в гробу перевернул своим хуем и он там от стыда сгорел а ты педик гнилой",
+    "я твою сестру в жопу трахал пока ты тут пиздел а она сказала что ты хуже меня во всем",
+    "я твою сестру за волосы таскал и в жопу ебал пока она не поняла кто тут главный",
+    "я твою сестру нахуй выебал и она теперь моя потому что ты ничтожество полное",
+    "я твою бабку своей залупой по стенке размазал и она теперь как картина висит",
+    "я твою бабку в гробу трахнул и она там от стыда перевернулась два раза а ты хач ебаный",
+    "я твою бабку нахуй послал и она там осталась потому что старой уже некуда деваться было",
+    "я твою мать и сестру твою в жопу ебал а ты пидор конченный на моём хуе сидишь",
+    "я твоего отца и деда твоего расчленил нахуй а ты сын шлюхи ебаный тут мне перечить вздумал",
+    "я твою родню всю вырезал нахуй и по ветру развеял а ты уебан конченный на меня пасть открываешь",
+    "я тебя своим хуем как битой стальной отпизжу так что ты молиться будешь чтоб я тебя больше не трогал",
+    "я тебя просто нахуй прожгу насквозь своим божественным членом все твои хлипкие органы будут прогорать",
+    "от моего хуя идет свет такой что даже твои очки тебя не защитят я тебя просто нахуй ослеплю",
+    "ты как собака нахуй лаешь а я тебя как щенка за шкирку возьму и в окно выкину нахуй",
+    "ты как свинья жирная тут хрюкаешь а я тебя на шашлык пущу и съем без соли",
+    "ты как таракан ебаный ползаешь под моими ногами и я тебя раздавлю как букашку",
+    "я бог а ты просто жалкий червяк я тебя ногтем раздавлю и даже не замечу этого",
+    "мой хуй сияет ярче солнца и ты просто ослепнешь когда я его достану из штанов",
+    "от моего хуя идет сила такая что ты просто рассыплешься в прах и тебя ветром развеет нахуй",
 ]
 
 used_templates = []
@@ -519,7 +470,7 @@ class GlowButton(tk.Button):
         self.after(100, lambda: self.config(relief=tk.FLAT))
 
 # ============================================================
-# ОКНО АКТИВАЦИИ
+# ОКНО АКТИВАЦИИ (ПО ЦЕНТРУ!)
 # ============================================================
 
 class ActivationWindow:
@@ -530,6 +481,14 @@ class ActivationWindow:
         self.window.configure(bg=COLORS['bg'])
         self.window.resizable(False, False)
         self.window.protocol("WM_DELETE_WINDOW", sys.exit)
+        
+        # Центрируем окно
+        self.window.update_idletasks()
+        width = 600
+        height = 580
+        x = (self.window.winfo_screenwidth() // 2) - (width // 2)
+        y = (self.window.winfo_screenheight() // 2) - (height // 2)
+        self.window.geometry(f'{width}x{height}+{x}+{y}')
         
         shadow = tk.Frame(self.window, bg=COLORS['shadow'], width=580, height=560)
         shadow.place(x=10, y=10)
@@ -627,7 +586,7 @@ class ActivationWindow:
         start_program()
 
 # ============================================================
-# ГЛАВНОЕ ПРИЛОЖЕНИЕ (ПОЛНЫЙ ИНТЕРФЕЙС)
+# ГЛАВНОЕ ПРИЛОЖЕНИЕ
 # ============================================================
 
 def start_program():
@@ -638,6 +597,14 @@ def start_program():
     root.configure(bg=COLORS['bg'])
     root.minsize(700, 550)
     root.resizable(True, True)
+    
+    # Центрируем главное окно
+    root.update_idletasks()
+    width = 800
+    height = 650
+    x = (root.winfo_screenwidth() // 2) - (width // 2)
+    y = (root.winfo_screenheight() // 2) - (height // 2)
+    root.geometry(f'{width}x{height}+{x}+{y}')
     
     app = InsultApp(root)
     root.mainloop()
@@ -677,20 +644,20 @@ class InsultApp:
         top_frame = tk.Frame(main_frame, bg=COLORS['bg'])
         top_frame.pack(fill=tk.X, padx=0, pady=5)
         
-        self.admin_btn = GlowButton(top_frame, text=__.__('h'), command=self.toggle_admin, bg=COLORS['accent'], fg=COLORS['text'], font=("Segoe UI", 10, "bold"), padx=14, pady=5)
+        self.admin_btn = GlowButton(top_frame, text="⚙️ АДМИН-ПАНЕЛЬ (F6)", command=self.toggle_admin, bg=COLORS['accent'], fg=COLORS['text'], font=("Segoe UI", 10, "bold"), padx=14, pady=5)
         self.admin_btn.pack(side=tk.LEFT)
         
-        self.fs_btn = GlowButton(top_frame, text=__.__('i'), command=self.toggle_fullscreen, bg=COLORS['bg4'], fg=COLORS['text'], font=("Segoe UI", 10, "bold"), padx=14, pady=5)
+        self.fs_btn = GlowButton(top_frame, text="⛶ ПОЛНЫЙ ЭКРАН (F11)", command=self.toggle_fullscreen, bg=COLORS['bg4'], fg=COLORS['text'], font=("Segoe UI", 10, "bold"), padx=14, pady=5)
         self.fs_btn.pack(side=tk.RIGHT)
         
-        self.logout_btn = GlowButton(top_frame, text=__.__('j'), command=self.logout, bg=COLORS['danger'], fg=COLORS['text'], font=("Segoe UI", 10, "bold"), padx=14, pady=5)
+        self.logout_btn = GlowButton(top_frame, text="🚪 ВЫЙТИ ИЗ АККАУНТА", command=self.logout, bg=COLORS['danger'], fg=COLORS['text'], font=("Segoe UI", 10, "bold"), padx=14, pady=5)
         self.logout_btn.pack(side=tk.RIGHT, padx=5)
         
         stats_frame = tk.Frame(main_frame, bg=COLORS['bg'])
         stats_frame.pack(pady=5)
-        self.status_label = tk.Label(stats_frame, text=__.__('n'), bg=COLORS['bg'], fg=COLORS['warning'], font=("Segoe UI", 13, "bold"))
+        self.status_label = tk.Label(stats_frame, text="⏸️ Ожидание...", bg=COLORS['bg'], fg=COLORS['warning'], font=("Segoe UI", 13, "bold"))
         self.status_label.pack(side=tk.LEFT, padx=10)
-        self.count_label = tk.Label(stats_frame, text=f"{__.__('o')}0", bg=COLORS['bg'], fg=COLORS['neon'], font=("Segoe UI", 13, "bold"))
+        self.count_label = tk.Label(stats_frame, text="📨 0", bg=COLORS['bg'], fg=COLORS['neon'], font=("Segoe UI", 13, "bold"))
         self.count_label.pack(side=tk.LEFT, padx=10)
         
         self.preview = scrolledtext.ScrolledText(main_frame, height=9, bg=COLORS['bg3'], fg=COLORS['text'], insertbackground='white', font=("Segoe UI", 10), relief=tk.FLAT, borderwidth=2, padx=15, pady=15)
@@ -714,11 +681,11 @@ class InsultApp:
         
         btn_frame = tk.Frame(main_frame, bg=COLORS['bg'])
         btn_frame.pack(pady=8)
-        self.start_btn = GlowButton(btn_frame, text=__.__('k'), command=self.start_spam, bg=COLORS['success'], fg=COLORS['text'], font=("Segoe UI", 10, "bold"), width=16, padx=5, pady=8)
+        self.start_btn = GlowButton(btn_frame, text="🤖 СТАРТ (F3)", command=self.start_spam, bg=COLORS['success'], fg=COLORS['text'], font=("Segoe UI", 10, "bold"), width=16, padx=5, pady=8)
         self.start_btn.pack(side=tk.LEFT, padx=5)
-        self.stop_btn = GlowButton(btn_frame, text=__.__('l'), command=self.stop_spam, bg=COLORS['danger'], fg=COLORS['text'], font=("Segoe UI", 10, "bold"), width=16, padx=5, pady=8)
+        self.stop_btn = GlowButton(btn_frame, text="🛑 СТОП (F4)", command=self.stop_spam, bg=COLORS['danger'], fg=COLORS['text'], font=("Segoe UI", 10, "bold"), width=16, padx=5, pady=8)
         self.stop_btn.pack(side=tk.LEFT, padx=5)
-        self.pause_btn = GlowButton(btn_frame, text=__.__('m'), command=self.toggle_pause, bg=COLORS['accent'], fg=COLORS['text'], font=("Segoe UI", 10, "bold"), width=16, padx=5, pady=8)
+        self.pause_btn = GlowButton(btn_frame, text="⏸️ ПАУЗА (F5)", command=self.toggle_pause, bg=COLORS['accent'], fg=COLORS['text'], font=("Segoe UI", 10, "bold"), width=16, padx=5, pady=8)
         self.pause_btn.pack(side=tk.LEFT, padx=5)
         
         bottom_frame = tk.Frame(main_frame, bg=COLORS['bg'])
@@ -727,7 +694,7 @@ class InsultApp:
         tk.Label(bottom_frame, text=LOVE_TEXT, bg=COLORS['bg'], fg=COLORS['pink'], font=("Segoe UI", 10, "bold")).pack()
     
     def logout(self):
-        if messagebox.askyesno(__.__('r'), __.__('s')):
+        if messagebox.askyesno("Выход из аккаунта", "Вы уверены, что хотите выйти из аккаунта?\nКлюч будет удалён, и вам нужно будет ввести его заново."):
             db.logout()
             self.root.destroy()
             show_activation()
@@ -738,7 +705,7 @@ class InsultApp:
         if self.fullscreen:
             self.fs_btn.config(text="⛶ ОКОННЫЙ РЕЖИМ (F11)", bg=COLORS['warning'])
         else:
-            self.fs_btn.config(text=__.__('i'), bg=COLORS['bg4'])
+            self.fs_btn.config(text="⛶ ПОЛНЫЙ ЭКРАН (F11)", bg=COLORS['bg4'])
     
     def setup_hotkeys(self):
         try:
@@ -759,11 +726,11 @@ class InsultApp:
                 self.admin_panel = AdminPanel(self.root)
             self.admin_panel.toggle()
         else:
-            messagebox.showwarning(__.__('q'), __.__('p'))
+            messagebox.showwarning("Доступ запрещен", "Только для администраторов!")
     
     def update_counters(self):
         try:
-            self.count_label.config(text=f"{__.__('o')}{message_count}")
+            self.count_label.config(text=f"📨 {message_count}")
         except:
             pass
     
@@ -775,17 +742,17 @@ class InsultApp:
             elif not stop_spam and spam_thread and spam_thread.is_alive():
                 self.status_label.config(text="🧠 ГЕНЕРАЦИЯ", fg=COLORS['success'])
                 self.start_btn.config(bg=COLORS['bg4'], text="🧠 РАБОТАЕТ...")
-                self.pause_btn.config(text=__.__('m'), bg=COLORS['accent'])
+                self.pause_btn.config(text="⏸️ ПАУЗА (F5)", bg=COLORS['accent'])
             else:
-                self.status_label.config(text=__.__('n'), fg=COLORS['text2'])
-                self.start_btn.config(bg=COLORS['success'], text=__.__('k'))
-                self.pause_btn.config(text=__.__('m'), bg=COLORS['accent'])
+                self.status_label.config(text="⏸️ Остановлено", fg=COLORS['text2'])
+                self.start_btn.config(bg=COLORS['success'], text="🤖 СТАРТ (F3)")
+                self.pause_btn.config(text="⏸️ ПАУЗА (F5)", bg=COLORS['accent'])
         except:
             pass
     
     def update_stats(self):
         self.update_ui_state()
-        self.count_label.config(text=f"{__.__('o')}{message_count}")
+        self.count_label.config(text=f"📨 {message_count}")
         self.root.after(500, self.update_stats)
     
     def start_spam(self):
