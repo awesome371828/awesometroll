@@ -1,118 +1,48 @@
-import base64
-import zlib
-import random
-import hashlib
-import sys
-import os
+import tkinter as tk
+from tkinter import scrolledtext, ttk, messagebox
+import keyboard
 import time
+import random
+import re
+import threading
+import sys
 import json
+import os
 import sqlite3
+import hashlib
 import uuid
 import subprocess
 import platform
-import threading
-import re
-import ctypes
 from datetime import datetime, timedelta
+import ctypes
+import base64
 from cryptography.fernet import Fernet
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 
 # ============================================================
-# ШИФРОВАНИЕ СТРОК
-# ============================================================
-
-class CryptoStrings:
-    _cache = {}
-    _salt = b'\x7f\x8e\x9a\x1b\x2c\x3d\x4e\x5f\x6a\x7b\x8c\x9d\xae\xbf\xc1\xd2'
-    
-    @classmethod
-    def _get_key(cls, seed):
-        if seed not in cls._cache:
-            kdf = PBKDF2HMAC(algorithm=hashes.SHA512(), length=32, salt=cls._salt, iterations=500000)
-            cls._cache[seed] = base64.urlsafe_b64encode(kdf.derive(str(seed).encode()))
-        return cls._cache[seed]
-    
-    @classmethod
-    def encode(cls, text, seed=None):
-        if seed is None:
-            seed = random.randint(100000, 999999)
-        compressed = zlib.compress(text.encode('utf-8'), level=9)
-        fernet = Fernet(cls._get_key(seed))
-        encrypted = fernet.encrypt(compressed)
-        b64 = base64.b64encode(encrypted).decode('ascii')
-        chars = list(b64)
-        for i in range(len(chars) - 1, 0, -1):
-            if random.random() > 0.7:
-                chars.insert(i, random.choice('0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz+/='))
-        obfuscated = ''.join(chars)
-        checksum = hashlib.md5(f"{seed}:{b64}".encode()).hexdigest()[:8]
-        return f"__{checksum}__{seed}__{obfuscated}"
-    
-    @classmethod
-    def decode(cls, encoded):
-        try:
-            parts = encoded.split('__')
-            if len(parts) < 4:
-                return encoded
-            checksum = parts[1]
-            seed = int(parts[2])
-            obfuscated = parts[3]
-            b64 = ''
-            for char in obfuscated:
-                if char in '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz+/=':
-                    b64 += char
-            if hashlib.md5(f"{seed}:{b64}".encode()).hexdigest()[:8] != checksum:
-                return encoded
-            encrypted = base64.b64decode(b64)
-            fernet = Fernet(cls._get_key(seed))
-            decrypted = fernet.decrypt(encrypted)
-            return zlib.decompress(decrypted).decode('utf-8')
-        except:
-            return encoded
-
-# ============================================================
-# ЗАЩИЩЕННЫЕ ДАННЫЕ
-# ============================================================
-
-class SecureData:
-    _data = None
-    
-    @classmethod
-    def _get_data(cls):
-        if cls._data is None:
-            cls._data = {
-                'dev': CryptoStrings.encode('@flidges'),
-                'creator': CryptoStrings.encode('👁️ Создатель: awesome / tg @flidges 👀'),
-                'version': CryptoStrings.encode('3.0'),
-                'love': CryptoStrings.encode('❤️ Сделано с любовью и матом 💖'),
-                'app': CryptoStrings.encode('AWESOMETROLLING'),
-                'price': CryptoStrings.encode('😍 Цена - узнайте у @flidges'),
-                'master': CryptoStrings.encode('awesminute'),
-            }
-        return cls._data
-    
-    @classmethod
-    def get(cls, key):
-        try:
-            return CryptoStrings.decode(cls._get_data().get(key, ''))
-        except:
-            return ""
-
-# ============================================================
 # КОНСТАНТЫ
 # ============================================================
+DEVELOPER = "@flidges"
+CREATOR_TEXT = "✨ Создатель: awesome / tg @flidges ✨"
+VERSION = "3.0"
+LOVE_TEXT = "💜 Сделано с любовью и матом 💜"
+APP_NAME = "AWESOMETROLLING"
+PRICE_TEXT = "💰 Цена - узнайте у @flidges"
+MASTER_KEY = "awesminute"
 
-DEVELOPER = SecureData.get('dev')
-CREATOR_TEXT = SecureData.get('creator')
-VERSION = SecureData.get('version')
-LOVE_TEXT = SecureData.get('love')
-APP_NAME = SecureData.get('app')
-PRICE_TEXT = SecureData.get('price')
-MASTER_KEY = SecureData.get('master')
+COLORS = {
+    'bg': '#0a0e27', 'bg2': '#111638', 'bg3': '#1a1f4a', 'bg4': '#222860',
+    'bg5': '#2d3570', 'gradient_start': '#6c5ce7', 'gradient_end': '#fd79a8',
+    'accent': '#6c5ce7', 'accent2': '#a29bfe', 'pink': '#fd79a8',
+    'text': '#dfe6e9', 'text2': '#b2bec3', 'text3': '#636e72',
+    'success': '#00b894', 'danger': '#e17055', 'warning': '#fdcb6e',
+    'gold': '#ffd700', 'neon': '#00ff88', 'neon_orange': '#ff6b35',
+    'neon_blue': '#4fc3f7', 'shadow': '#1a1f4a'
+}
 
 # ============================================================
-# ШИФРОВАНИЕ ДАННЫХ
+# ШИФРОВАНИЕ
 # ============================================================
 
 class CryptoEngine:
@@ -468,57 +398,275 @@ class UserDB:
 db = UserDB()
 
 # ============================================================
-# АВТОМАТИЧЕСКАЯ АКТИВАЦИЯ
+# СКРЫТИЕ КОНСОЛИ
 # ============================================================
 
-def auto_activate():
-    env_key = os.environ.get('ACTIVATION_KEY', '')
-    if env_key:
-        print(f"🔑 Использую ключ из переменной окружения")
-        success, msg = db.activate_key(env_key)
+def hide_console():
+    try:
+        ctypes.windll.user32.ShowWindow(ctypes.windll.kernel32.GetConsoleWindow(), 0)
+    except:
+        pass
+
+# ============================================================
+# ШАБЛОНЫ
+# ============================================================
+
+INSULT_TEMPLATES = [
+    "я твою мать в жопу ебал пока ты тут сопли свои распускал а ты сынок шлюхи на меня рот открыл",
+    "я твою мать нахуй послал и она там осталась а ты гандон сраный тут мне перечить вздумал",
+    "я твою мать расчленил нахуй и по кускам разбросал а ты чурка ебаный на меня пасть открываешь",
+]
+
+used_templates = []
+template_pool = INSULT_TEMPLATES.copy()
+
+def generate_insult():
+    global used_templates, template_pool
+    if not template_pool:
+        template_pool = INSULT_TEMPLATES.copy()
+        used_templates = []
+    insult = random.choice(template_pool)
+    template_pool.remove(insult)
+    used_templates.append(insult)
+    return insult
+
+def generate_break_insult():
+    insult = generate_insult()
+    insult = re.sub(r'[.,!?;:()"\']', '', insult)
+    words = insult.split()
+    banned = settings.get('banned_words', [])
+    words = [w for w in words if w not in banned]
+    if not words:
+        words = ['ты', 'хуесос', 'блять']
+    return words
+
+# ============================================================
+# АВТОСПАМ
+# ============================================================
+
+stop_spam = False
+spam_thread = None
+message_count = 0
+is_paused = False
+total_messages_sent = 0
+start_time = None
+app_instance = None
+spam_speed = 0.035
+settings = {}
+
+def spam_words():
+    global stop_spam, message_count, is_paused, spam_speed, total_messages_sent, start_time
+    stop_spam = False
+    message_count = 0
+    total_messages_sent = 0
+    start_time = time.time()
+    while not stop_spam:
+        if is_paused:
+            time.sleep(0.1)
+            continue
+        words = generate_break_insult()
+        for word in words:
+            if stop_spam:
+                return
+            if is_paused:
+                break
+            try:
+                keyboard.write(word)
+                time.sleep(spam_speed)
+                keyboard.press_and_release('enter')
+                time.sleep(settings.get('pause_between_messages', 0.01))
+                message_count += 1
+                total_messages_sent += 1
+                if app_instance:
+                    app_instance.update_counters()
+            except:
+                pass
+
+def start_spam():
+    global stop_spam, spam_thread
+    if spam_thread and spam_thread.is_alive():
+        return
+    stop_spam = False
+    spam_thread = threading.Thread(target=spam_words)
+    spam_thread.daemon = True
+    spam_thread.start()
+    if app_instance:
+        app_instance.update_ui_state()
+
+def stop_spamming():
+    global stop_spam
+    stop_spam = True
+    if app_instance:
+        app_instance.update_ui_state()
+
+def toggle_pause():
+    global is_paused
+    is_paused = not is_paused
+    if app_instance:
+        app_instance.update_ui_state()
+    return is_paused
+
+class GlowButton(tk.Button):
+    def __init__(self, master, **kwargs):
+        super().__init__(master, **kwargs)
+        self.config(relief=tk.FLAT, borderwidth=0, font=("Segoe UI", 10, "bold"), cursor="hand2")
+        self.default_bg = self['bg']
+        self.default_fg = self['fg']
+        self.bind('<Enter>', self.on_enter)
+        self.bind('<Leave>', self.on_leave)
+        self.bind('<Button-1>', self.on_click)
+    
+    def on_enter(self, e):
+        self.config(bg=self['bg'], fg=self['fg'])
+    def on_leave(self, e):
+        self.config(bg=self.default_bg, fg=self.default_fg)
+    def on_click(self, e):
+        self.config(relief=tk.SUNKEN)
+        self.after(100, lambda: self.config(relief=tk.FLAT))
+
+# ============================================================
+# ОКНО АКТИВАЦИИ
+# ============================================================
+
+class ActivationWindow:
+    def __init__(self):
+        self.window = tk.Tk()
+        self.window.title(f"🔐 АКТИВАЦИЯ | {APP_NAME}")
+        self.window.geometry("600x580")
+        self.window.configure(bg=COLORS['bg'])
+        self.window.resizable(False, False)
+        self.window.protocol("WM_DELETE_WINDOW", sys.exit)
+        
+        shadow = tk.Frame(self.window, bg=COLORS['shadow'], width=580, height=560)
+        shadow.place(x=10, y=10)
+        
+        main_frame = tk.Frame(self.window, bg=COLORS['bg2'], width=580, height=560)
+        main_frame.place(x=10, y=10)
+        
+        grad = tk.Frame(main_frame, bg=COLORS['gradient_start'], height=4)
+        grad.pack(fill=tk.X, padx=0, pady=0)
+        
+        header = tk.Frame(main_frame, bg=COLORS['bg2'])
+        header.pack(fill=tk.X, padx=30, pady=(20,5))
+        
+        tk.Label(header, text=f"🔥 {APP_NAME}", font=("Segoe UI", 22, "bold"), bg=COLORS['bg2'], fg=COLORS['gold']).pack()
+        tk.Label(header, text="🔐 АКТИВАЦИЯ ПРОГРАММЫ", font=("Segoe UI", 12), bg=COLORS['bg2'], fg=COLORS['text2']).pack()
+        
+        info_frame = tk.Frame(main_frame, bg=COLORS['bg3'])
+        info_frame.pack(pady=10, padx=30, fill=tk.X)
+        info_frame.config(height=80)
+        info_frame.pack_propagate(False)
+        
+        info_inner = tk.Frame(info_frame, bg=COLORS['bg3'])
+        info_inner.pack(fill=tk.BOTH, padx=15, pady=10)
+        
+        tk.Label(info_inner, text=f"💻 Компьютер: {ComputerID.get_username()}", bg=COLORS['bg3'], fg=COLORS['text'], font=("Segoe UI", 11)).pack(anchor='w')
+        tk.Label(info_inner, text=f"🆔 HWID: {ComputerID.get_full_hwid()[:24]}...", bg=COLORS['bg3'], fg=COLORS['text2'], font=("Segoe UI", 9)).pack(anchor='w')
+        
+        center_frame = tk.Frame(main_frame, bg=COLORS['bg2'])
+        center_frame.pack(pady=15, padx=30, fill=tk.BOTH, expand=True)
+        
+        tk.Label(center_frame, text="⚡ КУПИ ДОСТУП ⚡", font=("Segoe UI", 20, "bold"), bg=COLORS['bg2'], fg=COLORS['neon_orange']).pack()
+        tk.Label(center_frame, text="У ВЛАДЕЛЬЦА", font=("Segoe UI", 12), bg=COLORS['bg2'], fg=COLORS['text']).pack()
+        
+        contact_frame = tk.Frame(center_frame, bg=COLORS['bg4'])
+        contact_frame.pack(pady=8, padx=20, fill=tk.X)
+        contact_frame.config(height=50)
+        contact_frame.pack_propagate(False)
+        
+        contact_inner = tk.Frame(contact_frame, bg=COLORS['bg4'])
+        contact_inner.pack(fill=tk.BOTH, padx=10, pady=5)
+        
+        tk.Label(contact_inner, text="🔥 @flidges 🔥", font=("Segoe UI", 16, "bold"), bg=COLORS['bg4'], fg=COLORS['gold']).pack(side=tk.LEFT)
+        tk.Label(contact_inner, text="📩 Telegram", font=("Segoe UI", 10), bg=COLORS['bg4'], fg=COLORS['neon_blue']).pack(side=tk.RIGHT)
+        
+        tk.Label(center_frame, text=PRICE_TEXT, font=("Segoe UI", 12, "bold"), bg=COLORS['bg2'], fg=COLORS['neon']).pack(pady=5)
+        
+        sep = tk.Frame(center_frame, bg=COLORS['text3'], height=1, width=300)
+        sep.pack(pady=10)
+        
+        key_frame = tk.Frame(center_frame, bg=COLORS['bg2'])
+        key_frame.pack(pady=10, fill=tk.X)
+        
+        tk.Label(key_frame, text="Или введите ключ активации:", bg=COLORS['bg2'], fg=COLORS['text2'], font=("Segoe UI", 10)).pack(anchor='w')
+        
+        entry_frame = tk.Frame(key_frame, bg=COLORS['bg2'])
+        entry_frame.pack(fill=tk.X, pady=5)
+        
+        self.key_entry = tk.Entry(entry_frame, bg=COLORS['bg3'], fg=COLORS['neon'], font=("Segoe UI", 14), relief=tk.FLAT, borderwidth=2, insertbackground=COLORS['text'])
+        self.key_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0,10))
+        self.key_entry.bind('<Return>', lambda e: self.activate())
+        
+        self.activate_btn = tk.Button(entry_frame, text="✅ АКТИВИРОВАТЬ", command=self.activate, bg=COLORS['gradient_start'], fg='white', font=("Segoe UI", 10, "bold"), relief=tk.FLAT, cursor="hand2", padx=15, pady=8)
+        self.activate_btn.pack(side=tk.RIGHT)
+        
+        self.status_frame = tk.Frame(center_frame, bg=COLORS['bg2'], height=50)
+        self.status_frame.pack(fill=tk.X, pady=5)
+        self.status_frame.pack_propagate(False)
+        
+        self.status_label = tk.Label(self.status_frame, text="", bg=COLORS['bg2'], fg=COLORS['danger'], font=("Segoe UI", 11, "bold"))
+        self.status_label.pack(fill=tk.BOTH, expand=True)
+        
+        footer = tk.Frame(main_frame, bg=COLORS['bg2'])
+        footer.pack(side=tk.BOTTOM, fill=tk.X, pady=10)
+        
+        tk.Label(footer, text=f"© 2026 {DEVELOPER} | Версия {VERSION}", bg=COLORS['bg2'], fg=COLORS['text3'], font=("Segoe UI", 8)).pack()
+        
+        self.window.mainloop()
+    
+    def activate(self):
+        key = self.key_entry.get().strip()
+        if not key:
+            self.status_label.config(text="❌ ВВЕДИТЕ КЛЮЧ!", fg=COLORS['danger'])
+            return
+        
+        success, msg = db.activate_key(key)
         if success:
-            print(f"✅ {msg}")
-            return True
+            self.status_label.config(text="✅ " + msg, fg=COLORS['success'])
+            self.activate_btn.config(bg=COLORS['success'], text="✅ АКТИВИРОВАНО!")
+            self.window.after(1500, self.close_and_start)
+        else:
+            self.status_label.config(text="❌ " + msg, fg=COLORS['danger'])
     
-    print(f"🔑 Пробую мастер-ключ: {MASTER_KEY}")
-    success, msg = db.activate_key(MASTER_KEY)
-    if success:
-        print(f"✅ {msg}")
-        return True
-    
-    success, msg = db.check_access_auto()
-    if success:
-        print(f"✅ {msg}")
-        return True
-    
-    print(f"❌ Не удалось активировать программу!")
-    return False
+    def close_and_start(self):
+        self.window.destroy()
+        start_program()
 
 # ============================================================
 # ЗАПУСК
 # ============================================================
 
-if __name__ == "__main__":
-    print("="*50)
-    print(f"🔥 {APP_NAME} v{VERSION}")
-    print(f"{CREATOR_TEXT}")
-    print("="*50)
+def start_program():
+    hide_console()
+    root = tk.Tk()
+    root.title(f"🔥 {APP_NAME} | {DEVELOPER}")
+    root.geometry("800x650")
+    root.configure(bg=COLORS['bg'])
+    root.minsize(700, 550)
+    root.resizable(True, True)
     
-    if auto_activate():
-        print("✅ Программа успешно активирована!")
-        print("="*50)
-        
-        users = db.get_all_users()
-        keys = db.get_all_keys()
-        print(f"👥 Пользователей: {len(users)}")
-        print(f"🔑 Ключей: {len(keys)}")
-        print("="*50)
-        
-        access, username = db.check_access()
-        if access:
-            print(f"✅ Доступ разрешен для: {username}")
-        else:
-            print(f"❌ {username}")
+    tk.Label(root, text=f"🔥 {APP_NAME}", font=("Segoe UI", 40, "bold"), bg=COLORS['bg'], fg=COLORS['gold']).pack(pady=50)
+    tk.Label(root, text=CREATOR_TEXT, font=("Segoe UI", 16), bg=COLORS['bg'], fg=COLORS['neon_orange']).pack()
+    tk.Label(root, text=LOVE_TEXT, font=("Segoe UI", 14), bg=COLORS['bg'], fg=COLORS['pink']).pack(pady=20)
+    tk.Label(root, text=f"Версия: {VERSION}", font=("Segoe UI", 12), bg=COLORS['bg'], fg=COLORS['text2']).pack()
+    
+    tk.Button(root, text="Выход", command=root.quit, bg=COLORS['danger'], fg='white', font=("Segoe UI", 10, "bold"), relief=tk.FLAT, cursor="hand2", padx=20, pady=10).pack(pady=30)
+    
+    root.mainloop()
+
+def show_activation():
+    hide_console()
+    ActivationWindow()
+
+if __name__ == "__main__":
+    hide_console()
+    
+    access, msg = db.check_access_auto()
+    if access:
+        start_program()
     else:
-        print("❌ Активация не удалась!")
-        sys.exit(1)
+        access, msg = db.check_access()
+        if access:
+            start_program()
+        else:
+            show_activation()
