@@ -22,11 +22,11 @@ from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 
 # ============================================================
-# ПОДКЛЮЧЕНИЕ К SUPABASE
+# ПОДКЛЮЧЕНИЕ К SUPABASE (С ТВОИМ КЛЮЧОМ!)
 # ============================================================
 
 SUPABASE_URL = "https://yzhgcdnjuvfhcvwedgga.supabase.co"
-SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inl6aGdjZG5qdXZmaGN2d2VkZ2dhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MjM0NTY3ODksImV4cCI6MjAzOTAzMjc4OX0.xxxxxxxx"  # ЗАМЕНИ НА СВОЙ ANON КЛЮЧ!
+SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inl6aGdjZG5qdXZmaGN3dmVkZ2dhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODY0NjExNTgsImV4cCI6MjEwMjAzNzE1OH0.ccCiaKPnpwjg69PC90qtPDOIWn5PezGxKERJtdWUB_I"
 
 class CloudDB:
     @classmethod
@@ -733,7 +733,6 @@ class StarBackground:
         self.running = True
         self.num_stars = num_stars
         
-        # Создаем звезды с разными параметрами
         for _ in range(num_stars):
             x = random.randint(0, 2000)
             y = random.randint(0, 2000)
@@ -760,12 +759,10 @@ class StarBackground:
         height = self.canvas.winfo_height() or 700
         
         for star in self.stars:
-            # Движение
             star['x'] += star['dx']
             star['y'] += star['dy']
             star['phase'] += star['speed']
             
-            # Отражение от границ
             if star['x'] < 0:
                 star['x'] = width
             if star['x'] > width:
@@ -775,10 +772,8 @@ class StarBackground:
             if star['y'] > height:
                 star['y'] = 0
             
-            # Мерцание
             b = int(star['brightness'] * (0.6 + 0.4 * (star['phase'] % 1)))
             
-            # Цвета
             colors = {
                 'blue': f"#{min(255, b):02x}{min(255, b//3):02x}{min(255, b):02x}",
                 'white': f"#{min(255, b):02x}{min(255, b):02x}{min(255, b):02x}",
@@ -787,7 +782,6 @@ class StarBackground:
             }
             color = colors.get(star['color'], f"#{min(255, b):02x}{min(255, b//2):02x}{min(255, b):02x}")
             
-            # Рисуем звезду с эффектом свечения
             s = star['size']
             glow = s * 2
             self.canvas.create_oval(
@@ -1129,7 +1123,7 @@ class InsultApp:
         self.root.after(500, self.update_stats)
 
 # ============================================================
-# AdminPanel (полный код)
+# AdminPanel (полный код - все вкладки)
 # ============================================================
 
 class AdminPanel:
