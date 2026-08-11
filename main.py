@@ -22,82 +22,61 @@ from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 
 # ============================================================
-# ПОДКЛЮЧЕНИЕ К SUPABASE (ОБЛАЧНАЯ БД)
+# ПОДКЛЮЧЕНИЕ К SUPABASE
 # ============================================================
 
 SUPABASE_URL = "https://yzhgcdnjuvfhcvwedgga.supabase.co"
-SUPABASE_KEY = "sb_publishable_jlEmP2OGria-IOzHlCHIZg_UNA3kFvB"
+SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inl6aGdjZG5qdXZmaGN2d2VkZ2dhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MjM0NTY3ODksImV4cCI6MjAzOTAzMjc4OX0.xxxxxxxx"  # ЗАМЕНИ НА СВОЙ ANON КЛЮЧ!
 
 class CloudDB:
-    """Облачная база данных Supabase"""
-    
     @classmethod
-    def _request(cls, method, endpoint, data=None, params=None):
+    def _request(cls, method, endpoint, data=None):
         headers = {
             "apikey": SUPABASE_KEY,
             "Authorization": f"Bearer {SUPABASE_KEY}",
             "Content-Type": "application/json"
         }
         url = f"{SUPABASE_URL}/rest/v1/{endpoint}"
-        
         try:
             if method == "GET":
-                response = requests.get(url, headers=headers, params=params)
+                r = requests.get(url, headers=headers)
             elif method == "POST":
-                response = requests.post(url, headers=headers, json=data)
+                r = requests.post(url, headers=headers, json=data)
             elif method == "PATCH":
-                response = requests.patch(url, headers=headers, json=data)
-            elif method == "DELETE":
-                response = requests.delete(url, headers=headers, params=params)
-            
-            if response.status_code in [200, 201, 204]:
-                return response.json() if response.text else True
-            else:
-                return None
+                r = requests.patch(url, headers=headers, json=data)
+            return r.json() if r.ok else None
         except:
             return None
     
     @classmethod
-    def insert_user(cls, username, hwid, expires_at, saved_key, is_owner=0, is_admin=0):
-        data = {
-            "username": username,
-            "hwid": hwid,
-            "is_owner": is_owner,
-            "is_admin": is_admin,
-            "expires_at": expires_at,
-            "saved_key": saved_key
-        }
-        return cls._request("POST", "users", data)
-    
-    @classmethod
     def get_all_users(cls):
-        result = cls._request("GET", "users?order=id.desc")
-        return result if result else []
+        return cls._request("GET", "users?order=id.desc")
     
     @classmethod
-    def insert_key(cls, key_text, expires_at, owner_hwid):
-        data = {
-            "key_text": key_text,
-            "expires_at": expires_at,
-            "owner_hwid": owner_hwid,
-            "is_used": 0
-        }
-        return cls._request("POST", "license_keys", data)
-    
-    @classmethod
-    def activate_key_cloud(cls, key_text, used_by, used_hwid):
-        data = {
-            "used_by": used_by,
-            "used_hwid": used_hwid,
-            "used_at": datetime.now().isoformat(),
-            "is_used": 1
-        }
-        return cls._request("PATCH", f"license_keys?key_text=eq.{key_text}", data)
+    def insert_user(cls, username, hwid, expires_at, saved_key, is_owner=0, is_admin=0):
+        return cls._request("POST", "users", {
+            "username": username, "hwid": hwid,
+            "is_owner": is_owner, "is_admin": is_admin,
+            "expires_at": expires_at, "saved_key": saved_key
+        })
     
     @classmethod
     def get_all_keys(cls):
-        result = cls._request("GET", "license_keys?order=id.desc")
-        return result if result else []
+        return cls._request("GET", "license_keys?order=id.desc")
+    
+    @classmethod
+    def insert_key(cls, key_text, expires_at, owner_hwid):
+        return cls._request("POST", "license_keys", {
+            "key_text": key_text, "expires_at": expires_at,
+            "owner_hwid": owner_hwid, "is_used": 0
+        })
+    
+    @classmethod
+    def activate_key_cloud(cls, key_text, used_by, used_hwid):
+        return cls._request("PATCH", f"license_keys?key_text=eq.{key_text}", {
+            "used_by": used_by, "used_hwid": used_hwid,
+            "used_at": datetime.now().isoformat(), "is_used": 1
+        })
 
 # ============================================================
 # СКРЫТИЕ КОНСОЛИ
@@ -259,7 +238,7 @@ class ComputerID:
         return hashlib.sha512(encrypted).hexdigest()[:64]
 
 # ============================================================
-# БАЗА ДАННЫХ (ЛОКАЛЬНАЯ + ОБЛАЧНАЯ)
+# БАЗА ДАННЫХ
 # ============================================================
 
 class UserDB:
@@ -505,6 +484,7 @@ class UserDB:
                         u.get('hwid', ''),
                         u.get('saved_key', '')
                     ))
+                print(f"☁️ Загружено {len(decrypted_users)} пользователей из облака")
                 return decrypted_users
         except:
             pass
@@ -540,6 +520,7 @@ class UserDB:
                         k.get('is_used', 0),
                         k.get('owner_hwid', '')
                     ))
+                print(f"☁️ Загружено {len(decrypted_keys)} ключей из облака")
                 return decrypted_keys
         except:
             pass
@@ -742,38 +723,49 @@ class GlowButton(tk.Button):
         self.after(100, lambda: self.config(relief=tk.FLAT))
 
 # ============================================================
-# ЗВЕЗДЫ НА ФОНЕ
+# АНИМИРОВАННЫЕ ЗВЕЗДЫ
 # ============================================================
 
 class StarBackground:
-    def __init__(self, canvas, num_stars=100):
+    def __init__(self, canvas, num_stars=150):
         self.canvas = canvas
         self.stars = []
         self.running = True
+        self.num_stars = num_stars
         
+        # Создаем звезды с разными параметрами
         for _ in range(num_stars):
-            x = random.randint(0, canvas.winfo_reqwidth() or 800)
-            y = random.randint(0, canvas.winfo_reqheight() or 600)
-            size = random.randint(1, 3)
-            speed = random.uniform(0.02, 0.08)
-            brightness = random.randint(100, 255)
+            x = random.randint(0, 2000)
+            y = random.randint(0, 2000)
+            size = random.uniform(0.5, 2.5)
+            speed = random.uniform(0.005, 0.03)
+            brightness = random.randint(50, 255)
+            phase = random.uniform(0, 6.28)
+            dx = random.uniform(-0.3, 0.3)
+            dy = random.uniform(-0.3, 0.3)
+            color_choice = random.choice(['blue', 'white', 'gold', 'pink'])
+            
             self.stars.append({
-                'x': x, 'y': y, 'size': size, 'speed': speed, 
-                'brightness': brightness, 'phase': random.uniform(0, 6.28)
+                'x': x, 'y': y, 'size': size, 'speed': speed,
+                'brightness': brightness, 'phase': phase,
+                'dx': dx, 'dy': dy, 'color': color_choice
             })
     
     def update(self):
         if not self.running:
             return
+        
         self.canvas.delete("star")
+        width = self.canvas.winfo_width() or 900
+        height = self.canvas.winfo_height() or 700
+        
         for star in self.stars:
+            # Движение
+            star['x'] += star['dx']
+            star['y'] += star['dy']
             star['phase'] += star['speed']
-            star['x'] += random.uniform(-0.3, 0.3)
-            star['y'] += random.uniform(-0.3, 0.3)
             
-            width = self.canvas.winfo_reqwidth() or 800
-            height = self.canvas.winfo_reqheight() or 600
-            
+            # Отражение от границ
             if star['x'] < 0:
                 star['x'] = width
             if star['x'] > width:
@@ -783,15 +775,33 @@ class StarBackground:
             if star['y'] > height:
                 star['y'] = 0
             
-            b = int(star['brightness'] * (0.5 + 0.5 * (star['phase'] % 1)))
-            color = f"#{min(255, b):02x}{min(255, b//2):02x}{min(255, b):02x}"
+            # Мерцание
+            b = int(star['brightness'] * (0.6 + 0.4 * (star['phase'] % 1)))
             
+            # Цвета
+            colors = {
+                'blue': f"#{min(255, b):02x}{min(255, b//3):02x}{min(255, b):02x}",
+                'white': f"#{min(255, b):02x}{min(255, b):02x}{min(255, b):02x}",
+                'gold': f"#{min(255, b):02x}{min(255, b//2):02x}{min(255, b//4):02x}",
+                'pink': f"#{min(255, b):02x}{min(255, b//3):02x}{min(255, b//2):02x}"
+            }
+            color = colors.get(star['color'], f"#{min(255, b):02x}{min(255, b//2):02x}{min(255, b):02x}")
+            
+            # Рисуем звезду с эффектом свечения
+            s = star['size']
+            glow = s * 2
             self.canvas.create_oval(
-                star['x'] - star['size'], star['y'] - star['size'],
-                star['x'] + star['size'], star['y'] + star['size'],
-                fill=color, outline="", tags="star"
+                star['x'] - glow, star['y'] - glow,
+                star['x'] + glow, star['y'] + glow,
+                fill='', outline=color, width=0.5, tags="star", stipple="gray50"
             )
-        self.canvas.after(100, self.update)
+            self.canvas.create_oval(
+                star['x'] - s, star['y'] - s,
+                star['x'] + s, star['y'] + s,
+                fill=color, outline='', tags="star"
+            )
+        
+        self.canvas.after(50, self.update)
     
     def stop(self):
         self.running = False
@@ -819,7 +829,7 @@ class ActivationWindow:
         self.canvas = tk.Canvas(self.window, width=600, height=650, bg=COLORS['bg'], highlightthickness=0)
         self.canvas.pack(fill=tk.BOTH, expand=True)
         
-        self.stars = StarBackground(self.canvas, 150)
+        self.stars = StarBackground(self.canvas, 100)
         self.stars.update()
         
         shadow = tk.Frame(self.canvas, bg=COLORS['shadow'], width=580, height=600)
@@ -929,7 +939,7 @@ def start_program():
     root.title(f"🔥 {APP_NAME} | {DEVELOPER}")
     root.geometry("900x700")
     root.configure(bg=COLORS['bg'])
-    root.minsize(800, 650)
+    root.minsize(850, 650)
     root.resizable(True, True)
     
     root.update_idletasks()
@@ -942,10 +952,6 @@ def start_program():
     app = InsultApp(root)
     root.mainloop()
 
-# ============================================================
-# InsultApp
-# ============================================================
-
 class InsultApp:
     def __init__(self, root):
         global app_instance
@@ -955,7 +961,7 @@ class InsultApp:
         self.root.title(f"🔥 {APP_NAME} | {DEVELOPER}")
         self.root.geometry("900x700")
         self.root.configure(bg=COLORS['bg'])
-        self.root.minsize(800, 650)
+        self.root.minsize(850, 650)
         self.root.resizable(True, True)
         
         hwid = ComputerID.get_full_hwid()
@@ -971,7 +977,7 @@ class InsultApp:
         
         self.canvas = tk.Canvas(self.root, bg=COLORS['bg'], highlightthickness=0)
         self.canvas.pack(fill=tk.BOTH, expand=True)
-        self.stars = StarBackground(self.canvas, 200)
+        self.stars = StarBackground(self.canvas, 150)
         self.stars.update()
         
         main_frame = tk.Frame(self.canvas, bg=COLORS['bg2'], bd=2, relief=tk.FLAT)
@@ -1123,7 +1129,7 @@ class InsultApp:
         self.root.after(500, self.update_stats)
 
 # ============================================================
-# AdminPanel
+# AdminPanel (полный код)
 # ============================================================
 
 class AdminPanel:
