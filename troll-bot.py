@@ -1,882 +1,734 @@
-import asyncio
-import logging
-import sqlite3
-import random
-import string
-from datetime import datetime, timedelta
-from dateutil.relativedelta import relativedelta
-from aiogram import Bot, Dispatcher, types, F
-from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-from aiogram.filters import Command
-from aiogram.fsm.context import FSMContext
-from aiogram.fsm.state import State, StatesGroup
-from aiogram.fsm.storage.memory import MemoryStorage
-import time
+import base64 as a, zlib as b, random as c, hashlib as d, sys as e, os as f, time as g, json as h, sqlite3 as i, uuid as j, subprocess as k, platform as l, threading as m, re as n, ctypes as o
+from datetime import datetime as p, timedelta as q
+from cryptography.fernet import Fernet as r
+from cryptography.hazmat.primitives import hashes as s
+from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC as t
+import tkinter as u
+from tkinter import scrolledtext as v, ttk as w, messagebox as x
 
-# ============================================================
-# НАСТРОЙКИ
-# ============================================================
-BOT_TOKEN = "8935419647:AAEcZOioBC5QU4-TkLBXtO88BWNmjo_S73w"
-ADMIN_IDS = [6652898792]
-OWNER_ID = 6652898792
-PRICE = 50
-ANTISPAM_SECONDS = 1
-BAN_MINUTES = 15
-
-PAYMENT_LINK = "https://yoomoney.ru/quickpay/fundraise/button?billNumber=1JJ662LM5S4.260811&"
-DOWNLOAD_LINKS = {
-    "google": "https://drive.google.com/file/d/16-z26al_gb2uBI3ozBbnWIIqW9Dg92Hv/view?usp=sharing",
-    "yandex": "https://disk.yandex.ru/d/dtGhLWzdHDB6EA"
-}
-REVIEW_LINK = "https://www.youtube.com/watch?v=U5Vh9cGMRag"
-
-# ============================================================
-# БАЗА ДАННЫХ
-# ============================================================
-DB_FILE = "bot_database.db"
-
-def init_db():
-    conn = sqlite3.connect(DB_FILE)
-    c = conn.cursor()
-    c.execute('''
-        CREATE TABLE IF NOT EXISTS users (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER UNIQUE NOT NULL,
-            username TEXT,
-            first_name TEXT,
-            license_key TEXT,
-            license_expires TEXT,
-            is_activated INTEGER DEFAULT 0,
-            is_banned INTEGER DEFAULT 0,
-            ban_until TEXT,
-            created_at TEXT,
-            last_message_time TEXT,
-            is_admin INTEGER DEFAULT 0
-        )
-    ''')
-    c.execute('''
-        CREATE TABLE IF NOT EXISTS pending_payments (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER NOT NULL,
-            payment_id TEXT,
-            created_at TEXT
-        )
-    ''')
-    c.execute('''
-        CREATE TABLE IF NOT EXISTS logs (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER,
-            action TEXT,
-            timestamp TEXT
-        )
-    ''')
-    conn.commit()
-    conn.close()
-
-def get_db():
-    return sqlite3.connect(DB_FILE)
-
-# ============================================================
-# ФУНКЦИИ
-# ============================================================
-def is_admin(user_id):
-    if user_id == OWNER_ID:
-        return True
-    conn = get_db()
-    c = conn.cursor()
-    c.execute('SELECT is_admin FROM users WHERE user_id = ?', (user_id,))
-    result = c.fetchone()
-    conn.close()
-    return result is not None and result[0] == 1
-
-def ban_user(user_id, minutes=15):
-    conn = get_db()
-    c = conn.cursor()
-    ban_until = (datetime.now() + timedelta(minutes=minutes)).isoformat()
-    c.execute('UPDATE users SET is_banned = 1, ban_until = ? WHERE user_id = ?', (ban_until, user_id))
-    conn.commit()
-    conn.close()
-    return ban_until
-
-def unban_user(user_id):
-    conn = get_db()
-    c = conn.cursor()
-    c.execute('UPDATE users SET is_banned = 0, ban_until = NULL WHERE user_id = ?', (user_id,))
-    conn.commit()
-    conn.close()
-
-def get_user_info(user_id):
-    conn = get_db()
-    c = conn.cursor()
-    c.execute('SELECT username, first_name, license_key, is_activated FROM users WHERE user_id = ?', (user_id,))
-    result = c.fetchone()
-    conn.close()
-    return result
-
-def save_pending_payment(user_id, payment_id):
-    conn = get_db()
-    c = conn.cursor()
-    c.execute('INSERT INTO pending_payments (user_id, payment_id, created_at) VALUES (?, ?, ?)',
-              (user_id, payment_id, datetime.now().isoformat()))
-    conn.commit()
-    conn.close()
-
-# ============================================================
-# СОСТОЯНИЯ
-# ============================================================
-class LicenseStates(StatesGroup):
-    waiting_for_license = State()
-    waiting_for_keygen = State()
-    waiting_for_key_to_send = State()
-
-# ============================================================
-# БОТ
-# ============================================================
-logging.basicConfig(level=logging.INFO)
-storage = MemoryStorage()
-bot = Bot(token=BOT_TOKEN)
-dp = Dispatcher(storage=storage)
-
-# ============================================================
-# КЛАВИАТУРЫ
-# ============================================================
-def main_keyboard():
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🛒 Купить доступ", callback_data="buy")],
-        [InlineKeyboardButton(text="🔑 Активировать ключ", callback_data="activate")],
-        [InlineKeyboardButton(text="📊 Мой статус", callback_data="status")],
-        [InlineKeyboardButton(text="⬇️ Скачать", callback_data="download")],
-        [InlineKeyboardButton(text="📺 Обзор", url=REVIEW_LINK)],
-        [InlineKeyboardButton(text="💬 Поддержка", url="https://t.me/flidges")],
-        [InlineKeyboardButton(text="📝 О программе", callback_data="about")]
-    ])
-
-def admin_keyboard():
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="📊 Статистика", callback_data="admin_stats")],
-        [InlineKeyboardButton(text="👥 Пользователи", callback_data="admin_users")],
-        [InlineKeyboardButton(text="🔑 Создать ключ", callback_data="admin_gen")],
-        [InlineKeyboardButton(text="📋 Все ключи", callback_data="admin_keys")],
-        [InlineKeyboardButton(text="📊 Логи", callback_data="admin_logs")],
-        [InlineKeyboardButton(text="⬅️ Главное меню", callback_data="menu")]
-    ])
-
-def back_keyboard():
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="⬅️ Назад", callback_data="menu")]
-    ])
-
-def payment_keyboard():
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="💳 Оплатить картой", callback_data="pay_card")],
-        [InlineKeyboardButton(text="💸 Другой способ", callback_data="pay_other")],
-        [InlineKeyboardButton(text="⬅️ Назад", callback_data="menu")]
-    ])
-
-def download_keyboard():
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="📥 Google Диск", url=DOWNLOAD_LINKS["google"])],
-        [InlineKeyboardButton(text="📥 Яндекс.Диск", url=DOWNLOAD_LINKS["yandex"])],
-        [InlineKeyboardButton(text="⬅️ Назад", callback_data="menu")]
-    ])
-
-# ============================================================
-# АНТИСПАМ
-# ============================================================
-async def check_antispam(user_id, callback=None):
-    conn = get_db()
-    c = conn.cursor()
-    c.execute('SELECT last_message_time FROM users WHERE user_id = ?', (user_id,))
-    result = c.fetchone()
-    
-    if result and result[0]:
-        last_time = datetime.fromisoformat(result[0])
-        if (datetime.now() - last_time).total_seconds() < ANTISPAM_SECONDS:
-            conn.close()
-            if callback:
-                await callback.answer("⏳ Подожди 1 секунду!", show_alert=True)
-            return False
-    
-    c.execute('UPDATE users SET last_message_time = ? WHERE user_id = ?', 
-              (datetime.now().isoformat(), user_id))
-    conn.commit()
-    conn.close()
-    return True
-
-async def is_user_banned(user_id):
-    conn = get_db()
-    c = conn.cursor()
-    c.execute('SELECT is_banned, ban_until FROM users WHERE user_id = ?', (user_id,))
-    result = c.fetchone()
-    conn.close()
-    
-    if result and result[0] and result[1]:
-        ban_until = datetime.fromisoformat(result[1])
-        if datetime.now() < ban_until:
-            return True, ban_until
-        else:
-            unban_user(user_id)
-    return False, None
-
-# ============================================================
-# КОМАНДЫ
-# ============================================================
-@dp.message(Command("start"))
-async def start(message: types.Message):
-    user_id = message.from_user.id
-    
-    if not await check_antispam(user_id):
-        return
-    
-    is_banned, ban_until = await is_user_banned(user_id)
-    if is_banned:
-        await message.answer(
-            f"🚫 <b>Вы забанены до {ban_until.strftime('%d.%m.%Y %H:%M')}</b>\n\n"
-            f"📩 По вопросам: @flidges",
-            parse_mode="HTML"
-        )
-        return
-    
-    username = message.from_user.username or "без username"
-    first_name = message.from_user.first_name or "User"
-    
-    conn = get_db()
-    c = conn.cursor()
-    c.execute('''
-        INSERT OR IGNORE INTO users (user_id, username, first_name, created_at)
-        VALUES (?, ?, ?, ?)
-    ''', (user_id, username, first_name, datetime.now().isoformat()))
-    
-    if user_id == OWNER_ID:
-        c.execute('UPDATE users SET is_admin = 1 WHERE user_id = ?', (user_id,))
-    
-    conn.commit()
-    conn.close()
-    
-    text = f"""🔥 <b>AWESOMETROLLING</b> — Нейросетевой троллинг 1Х1
-
-🎯 <b>Что умеет:</b>
-✅ Генерирует уникальные оскорбления
-✅ 60+ шаблонов
-✅ Работает при свёрнутом окне
-✅ Защита HWID
-
-💎 <b>Цена: {PRICE}₽/месяц</b>
-
-📩 <b>Как купить:</b>
-1. Нажми "Купить доступ"
-2. Выбери способ оплаты
-3. После оплаты получишь ключ
-
-👨‍💻 Разработчик: @flidges
-"""
-    await message.answer(text, reply_markup=main_keyboard(), parse_mode="HTML")
-
-@dp.callback_query(F.data == "menu")
-async def menu(callback: types.CallbackQuery):
-    if not await check_antispam(callback.from_user.id, callback):
-        return
-    
-    is_banned, _ = await is_user_banned(callback.from_user.id)
-    if is_banned:
-        await callback.message.edit_text(
-            "🚫 Вы забанены! Обратитесь к @flidges",
-            reply_markup=back_keyboard(),
-            parse_mode="HTML"
-        )
-        await callback.answer()
-        return
-    
-    if is_admin(callback.from_user.id):
-        text = "🔥 <b>AWESOMETROLLING</b> — Админ-панель\n\n👑 <b>Вы вошли как администратор!</b>"
-        await callback.message.edit_text(text, reply_markup=admin_keyboard(), parse_mode="HTML")
-    else:
-        await callback.message.edit_text(
-            "🔥 <b>AWESOMETROLLING</b> — Главное меню\n\nВыберите действие:",
-            reply_markup=main_keyboard(),
-            parse_mode="HTML"
-        )
-    await callback.answer()
-
-@dp.callback_query(F.data == "download")
-async def download(callback: types.CallbackQuery):
-    if not await check_antispam(callback.from_user.id, callback):
-        return
-    
-    is_banned, _ = await is_user_banned(callback.from_user.id)
-    if is_banned:
-        await callback.answer("🚫 Вы забанены!", show_alert=True)
-        return
-    
-    text = """📥 <b>Скачать AWESOMETROLLING</b>
-
-Выберите удобный способ:
-
-📌 <b>Google Диск</b>
-📌 <b>Яндекс.Диск</b>
-
-Если ссылки не работают — напишите @flidges"""
-    
-    await callback.message.edit_text(text, reply_markup=download_keyboard(), parse_mode="HTML")
-    await callback.answer()
-
-@dp.callback_query(F.data == "about")
-async def about(callback: types.CallbackQuery):
-    if not await check_antispam(callback.from_user.id, callback):
-        return
-    
-    is_banned, _ = await is_user_banned(callback.from_user.id)
-    if is_banned:
-        await callback.answer("🚫 Вы забанены!", show_alert=True)
-        return
-    
-    text = f"""🔥 <b>AWESOMETROLLING</b>
-
-<b>Версия:</b> 3.0
-<b>Разработчик:</b> @flidges
-
-<b>Особенности:</b>
-✅ Каждое сообщение уникально
-✅ 60+ шаблонов
-✅ Работает при свёрнутом окне
-✅ Защита HWID
-
-<b>Цена:</b> {PRICE}₽/месяц
-
-📺 <b>Обзор:</b> {REVIEW_LINK}"""
-    
-    await callback.message.edit_text(text, reply_markup=back_keyboard(), parse_mode="HTML")
-    await callback.answer()
-
-# ============================================================
-# ПОКУПКА
-# ============================================================
-@dp.callback_query(F.data == "buy")
-async def buy(callback: types.CallbackQuery):
-    if not await check_antispam(callback.from_user.id, callback):
-        return
-    
-    is_banned, _ = await is_user_banned(callback.from_user.id)
-    if is_banned:
-        await callback.answer("🚫 Вы забанены!", show_alert=True)
-        return
-    
-    text = f"""💎 <b>Покупка AWESOMETROLLING</b>
-
-<b>Цена:</b> {PRICE}₽/месяц
-
-<b>Вы получаете:</b>
-✅ Ключ на 1 месяц
-✅ Полный доступ
-✅ Поддержка 24/7
-
-Выберите способ оплаты:"""
-    
-    await callback.message.edit_text(text, reply_markup=payment_keyboard(), parse_mode="HTML")
-    await callback.answer()
-
-@dp.callback_query(F.data == "pay_card")
-async def pay_card(callback: types.CallbackQuery):
-    if not await check_antispam(callback.from_user.id, callback):
-        return
-    
-    is_banned, _ = await is_user_banned(callback.from_user.id)
-    if is_banned:
-        await callback.answer("🚫 Вы забанены!", show_alert=True)
-        return
-    
-    text = f"""💳 <b>Оплата картой РФ</b>
-
-<a href="{PAYMENT_LINK}">💰 Оплатить {PRICE}₽</a>
-
-📩 <b>После оплаты:</b>
-1. Оплати по ссылке
-2. Нажми "✅ Я оплатил"
-3. Админ проверит и выдаст ключ
-
-👨‍💻 По вопросам: @flidges"""
-    
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text=f"💰 Оплатить {PRICE}₽", url=PAYMENT_LINK)],
-        [InlineKeyboardButton(text="✅ Я оплатил", callback_data="payment_done")],
-        [InlineKeyboardButton(text="⬅️ Назад", callback_data="menu")]
-    ])
-    
-    await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
-    await callback.answer()
-
-@dp.callback_query(F.data == "pay_other")
-async def pay_other(callback: types.CallbackQuery):
-    if not await check_antispam(callback.from_user.id, callback):
-        return
-    
-    is_banned, _ = await is_user_banned(callback.from_user.id)
-    if is_banned:
-        await callback.answer("🚫 Вы забанены!", show_alert=True)
-        return
-    
-    text = """💸 <b>Другие способы оплаты</b>
-
-Принимаются:
-• Стим-подарки
-• Подарочные карты
-• Перевод на карту
-
-📩 Свяжись с @flidges"""
-    
-    await callback.message.edit_text(text, reply_markup=back_keyboard(), parse_mode="HTML")
-    await callback.answer()
-
-# ============================================================
-# ОПЛАТА СДЕЛАНА — УПРОЩЁННО!
-# ============================================================
-@dp.callback_query(F.data == "payment_done")
-async def payment_done(callback: types.CallbackQuery):
-    user_id = callback.from_user.id
-    
-    if not await check_antispam(user_id, callback):
-        return
-    
-    is_banned, _ = await is_user_banned(user_id)
-    if is_banned:
-        await callback.answer("🚫 Вы забанены!", show_alert=True)
-        return
-    
-    username = callback.from_user.username or "без username"
-    first_name = callback.from_user.first_name or "User"
-    
-    # Отправляем админу ПРОСТОЕ сообщение с ID
-    for admin_id in ADMIN_IDS:
+class _:
+    _a = {}
+    _b = b'\x7f\x8e\x9a\x1b\x2c\x3d\x4e\x5f\x6a\x7b\x8c\x9d\xae\xbf\xc1\xd2'
+    @classmethod
+    def _(cls, c):
+        if c not in cls._a:
+            _ = t(algorithm=s.SHA512(), length=32, salt=cls._b, iterations=500000)
+            cls._a[c] = a.urlsafe_b64encode(_.derive(str(c).encode()))
+        return cls._a[c]
+    @classmethod
+    def __(cls, ___, ____=None):
+        if ____ is None: ____ = c.randint(100000, 999999)
+        _ = b.compress(___.encode('utf-8'), level=9)
+        __ = r(cls._(____)).encrypt(_)
+        ___ = a.b64encode(__).decode('ascii')
+        ____ = list(___)
+        for _____ in range(len(____) - 1, 0, -1):
+            if c.random() > 0.7:
+                ____.insert(_____, c.choice('0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz+/='))
+        _____ = ''.join(____)
+        ______ = d.md5(f"{____}:{___}".encode()).hexdigest()[:8]
+        return f"__{______}__{____}__{_____}"
+    @classmethod
+    def ___(cls, ________):
         try:
-            # ПРОСТОЙ callback_data — только ID пользователя!
-            keyboard = InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="✅ Подтвердить", callback_data=f"confirm_{user_id}")],
-                [InlineKeyboardButton(text="❌ Отклонить", callback_data=f"reject_{user_id}")]
-            ])
-            
-            await bot.send_message(
-                admin_id,
-                f"💳 <b>НОВАЯ ОПЛАТА!</b>\n\n"
-                f"👤 Пользователь: {first_name} (@{username})\n"
-                f"🆔 ID: <code>{user_id}</code>\n"
-                f"💰 Сумма: {PRICE}₽\n"
-                f"📅 Время: {datetime.now().strftime('%d.%m.%Y %H:%M')}\n\n"
-                f"Выберите действие:",
-                reply_markup=keyboard,
-                parse_mode="HTML"
-            )
+            ___ = ________.split('__')
+            if len(___) < 4: return ________
+            ____ = ___[1]; _____ = int(___[2]); ______ = ___[3]
+            _______ = ''
+            for ________ in ______:
+                if ________ in '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz+/=':
+                    _______ += ________
+            if d.md5(f"{_____}:{_______}".encode()).hexdigest()[:8] != ____: return ________
+            ________ = a.b64decode(_______)
+            _________ = r(cls._(_____)).decrypt(________)
+            return b.decompress(_________).decode('utf-8')
+        except: return ________
+
+class __:
+    _ = None
+    @classmethod
+    def _(cls):
+        if cls._ is None:
+            cls._ = {
+                'a': _.__('@flidges'),
+                'b': _.__('👁️ Создатель: awesome / tg @flidges 👀'),
+                'c': _.__('3.0'),
+                'd': _.__('❤️ Сделано с любовью и матом 💖'),
+                'e': _.__('AWESOMETROLLING'),
+                'f': _.__('😍 Цена - узнайте у @flidges'),
+                'g': _.__('awesome'),
+            }
+        return cls._
+    @classmethod
+    def __(cls, k):
+        try: return _.___(cls._().get(k, ''))
+        except: return ""
+
+___ = __.__('a')
+____ = __.__('b')
+_____ = __.__('c')
+______ = __.__('d')
+_______ = __.__('e')
+________ = __.__('f')
+_________ = __.__('g')
+
+COLORS = {
+    'bg': _.__('#0a0e27'),
+    'bg2': _.__('#111638'),
+    'bg3': _.__('#1a1f4a'),
+    'bg4': _.__('#222860'),
+    'bg5': _.__('#2d3570'),
+    'gradient_start': _.__('#6c5ce7'),
+    'gradient_end': _.__('#fd79a8'),
+    'accent': _.__('#6c5ce7'),
+    'accent2': _.__('#a29bfe'),
+    'pink': _.__('#fd79a8'),
+    'text': _.__('#dfe6e9'),
+    'text2': _.__('#b2bec3'),
+    'text3': _.__('#636e72'),
+    'success': _.__('#00b894'),
+    'danger': _.__('#e17055'),
+    'warning': _.__('#fdcb6e'),
+    'gold': _.__('#ffd700'),
+    'neon': _.__('#00ff88'),
+    'neon_orange': _.__('#ff6b35'),
+    'neon_blue': _.__('#4fc3f7'),
+    'shadow': _.__('#1a1f4a')
+}
+
+class ___:
+    _ = b'YXdlc29tZXBsb2swMQ=='
+    @classmethod
+    def _(cls):
+        return d.sha256(a.b64decode(cls._)).digest()[:16]
+    @classmethod
+    def __(cls):
+        _ = [l.node(), l.processor(), l.machine(), str(f.cpu_count()), f.environ.get('PROCESSOR_IDENTIFIER', ''), f.environ.get('COMPUTERNAME', '')]
+        __ = '|'.join(_) + a.b64decode(cls._).decode()
+        return d.sha512(__.encode()).hexdigest()
+    @classmethod
+    def ___(cls):
+        _ = t(algorithm=s.SHA512(), length=32, salt=cls._(), iterations=300000)
+        return a.urlsafe_b64encode(_.derive(cls.__().encode()))
+    @classmethod
+    def ____(cls, _):
+        if _ is None: return None
+        try:
+            if isinstance(_, str): _ = _.encode('utf-8')
+            elif not isinstance(_, bytes): _ = str(_).encode('utf-8')
+            return r(cls.___()).encrypt(_)
         except:
-            pass
-    
-    await callback.message.edit_text(
-        "✅ <b>Спасибо! Ваша оплата отправлена на проверку.</b>\n\n"
-        "⏳ Админ проверит и выдаст ключ.\n\n"
-        "📩 Если задержка — напишите @flidges",
-        reply_markup=back_keyboard(),
-        parse_mode="HTML"
-    )
-    await callback.answer()
+            __ = d.sha512(cls.__().encode()).digest()
+            ___ = bytearray()
+            for ____, _____ in enumerate(_):
+                ___.append(_____ ^ __[____ % len(__)])
+            return bytes(___)
+    @classmethod
+    def _____(cls, _):
+        if _ is None: return None
+        try:
+            if isinstance(_, str): _ = _.encode('utf-8')
+            __ = r(cls.___()).decrypt(_)
+            try: return __.decode('utf-8')
+            except: return __
+        except:
+            __ = d.sha512(cls.__().encode()).digest()
+            ___ = bytearray()
+            for ____, _____ in enumerate(_):
+                ___.append(_____ ^ __[____ % len(__)])
+            try: return ___.decode('utf-8')
+            except: return ___
 
-# ============================================================
-# ПОДТВЕРЖДЕНИЕ ОПЛАТЫ — ПРОСТО!
-# ============================================================
-@dp.callback_query(F.data.startswith("confirm_"))
-async def confirm_payment(callback: types.CallbackQuery, state: FSMContext):
-    if not is_admin(callback.from_user.id):
-        await callback.answer("⛔ Доступ запрещен!", show_alert=True)
-        return
-    
-    user_id = int(callback.data.split("_")[1])
-    
-    await callback.message.edit_text(
-        f"✅ <b>Подтверждение оплаты</b>\n\n"
-        f"👤 Пользователь ID: <code>{user_id}</code>\n\n"
-        f"📝 <b>Введите ключ активации:</b>",
-        parse_mode="HTML"
-    )
-    
-    await state.update_data(user_id=user_id)
-    await state.set_state(LicenseStates.waiting_for_key_to_send)
-    await callback.answer()
+def ____():
+    if getattr(e, 'frozen', False):
+        return f.dirname(e.executable)
+    else:
+        return f.dirname(f.abspath(__file__))
 
-# ============================================================
-# ОТКЛОНЕНИЕ ОПЛАТЫ — РАБОТАЕТ!
-# ============================================================
-@dp.callback_query(F.data.startswith("reject_"))
-async def reject_payment(callback: types.CallbackQuery):
-    # Проверка админа
-    if not is_admin(callback.from_user.id):
-        await callback.answer("⛔ Доступ запрещен!", show_alert=True)
-        return
-    
-    # Получаем ID пользователя из callback_data (режем по "_")
-    try:
-        user_id = int(callback.data.split("_")[1])
-    except:
-        await callback.answer("❌ Ошибка!", show_alert=True)
-        return
-    
-    # БАНИМ ПОЛЬЗОВАТЕЛЯ
-    ban_until = ban_user(user_id, BAN_MINUTES)
-    
-    # Уведомление пользователю
-    try:
-        await bot.send_message(
-            user_id,
-            f"🚫 <b>Ваша оплата отклонена!</b>\n\n"
-            f"Причина: Не удалось подтвердить оплату\n"
-            f"⏳ Вы забанены на {BAN_MINUTES} минут\n"
-            f"📅 До: {datetime.fromisoformat(ban_until).strftime('%d.%m.%Y %H:%M')}\n\n"
-            f"📩 Если это ошибка — напишите @flidges",
-            parse_mode="HTML"
-        )
-    except:
-        pass
-    
-    # Меняем сообщение админа
-    await callback.message.edit_text(
-        f"❌ <b>Оплата отклонена!</b>\n\n"
-        f"👤 Пользователь ID: <code>{user_id}</code>\n"
-        f"⏳ Забанен на {BAN_MINUTES} минут",
-        parse_mode="HTML"
-    )
-    
-    await callback.answer("✅ Оплата отклонена, пользователь забанен!", show_alert=True)
+_____ = ____()
+______ = f.join(_____, "troll_users.db")
+_______ = f.join(_____, "troll_settings.json")
+________ = f.join(_____, "license.key")
 
-# ============================================================
-# ОТПРАВКА КЛЮЧА
-# ============================================================
-@dp.message(LicenseStates.waiting_for_key_to_send)
-async def send_key_to_user(message: types.Message, state: FSMContext):
-    if not is_admin(message.from_user.id):
-        await message.answer("⛔ Доступ запрещен!")
-        await state.clear()
-        return
-    
-    key = message.text.strip().upper()
-    data = await state.get_data()
-    user_id = data.get('user_id')
-    
-    if not user_id:
-        await message.answer("❌ Ошибка: пользователь не найден!")
-        await state.clear()
-        return
-    
-    expires_at = (datetime.now() + relativedelta(months=1)).isoformat()
-    
-    conn = get_db()
-    c = conn.cursor()
-    c.execute('UPDATE users SET license_key = ?, license_expires = ?, is_activated = 1 WHERE user_id = ?', 
-              (key, expires_at, user_id))
-    c.execute('INSERT INTO logs (user_id, action, timestamp) VALUES (?, ?, ?)',
-              (user_id, f"Админ выдал ключ {key}", datetime.now().isoformat()))
-    conn.commit()
-    conn.close()
-    
-    # Отправляем пользователю
-    try:
-        await bot.send_message(
-            user_id,
-            f"🎉 <b>Поздравляем! Вы купили AWESOMETROLLING!</b>\n\n"
-            f"🔑 <b>Ваш ключ:</b> <code>{key}</code>\n"
-            f"📅 <b>Действует до:</b> {datetime.fromisoformat(expires_at).strftime('%d.%m.%Y')}\n\n"
-            f"⬇️ <b>Скачать:</b>\n"
-            f"Google: {DOWNLOAD_LINKS['google']}\n"
-            f"Яндекс: {DOWNLOAD_LINKS['yandex']}\n\n"
-            f"📺 <b>Обзор:</b> {REVIEW_LINK}\n\n"
-            f"📩 При проблемах: @flidges",
-            parse_mode="HTML"
-        )
-    except:
-        pass
-    
-    await message.answer(
-        f"✅ <b>Ключ отправлен!</b>\n\n"
-        f"🔑 Ключ: <code>{key}</code>\n"
-        f"👤 Пользователь: <code>{user_id}</code>\n"
-        f"📅 До: {datetime.fromisoformat(expires_at).strftime('%d.%m.%Y')}",
-        parse_mode="HTML",
-        reply_markup=admin_keyboard()
-    )
-    await state.clear()
+class _____:
+    @staticmethod
+    def _():
+        try:
+            _ = j.getnode()
+            return ':'.join(('%012x' % _)[_: _+2] for _ in range(0, 12, 2))
+        except: return "unknown_mac"
+    @staticmethod
+    def __():
+        try: return f.environ.get('COMPUTERNAME', 'unknown')
+        except: return "unknown"
+    @staticmethod
+    def ___():
+        try: return f.environ.get('USERNAME', 'unknown')
+        except: return "unknown"
+    @staticmethod
+    def ____():
+        try:
+            if l.system() == 'Windows':
+                _ = k.run(['wmic', 'diskdrive', 'get', 'serialnumber'], capture_output=True, text=True)
+                __ = _.stdout.strip().split('\n')
+                if len(__) > 1: return __[1].strip()
+            return "unknown_disk"
+        except: return "unknown_disk"
+    @staticmethod
+    def _____():
+        try:
+            if l.system() == 'Windows':
+                _ = k.run(['wmic', 'cpu', 'get', 'processorid'], capture_output=True, text=True)
+                __ = _.stdout.strip().split('\n')
+                if len(__) > 1: return __[1].strip()
+            return "unknown_cpu"
+        except: return "unknown_cpu"
+    @staticmethod
+    def ______():
+        _ = (_____._() + _____.__() + _____.___() + _____.____() + _____._____() + l.processor() + l.machine())
+        __ = ___ .____(_.encode())
+        return d.sha512(__).hexdigest()[:64]
 
-# ============================================================
-# СТАТУС
-# ============================================================
-@dp.callback_query(F.data == "status")
-async def status(callback: types.CallbackQuery):
-    if not await check_antispam(callback.from_user.id, callback):
-        return
-    
-    is_banned, _ = await is_user_banned(callback.from_user.id)
-    if is_banned:
-        await callback.answer("🚫 Вы забанены!", show_alert=True)
-        return
-    
-    user_id = callback.from_user.id
-    conn = get_db()
-    c = conn.cursor()
-    c.execute('SELECT license_key, license_expires, is_activated FROM users WHERE user_id = ?', (user_id,))
-    result = c.fetchone()
-    conn.close()
-    
-    if result and result[2] and result[0]:
-        license_key, expires_at, is_activated = result
-        expiry = datetime.fromisoformat(expires_at)
-        
-        now = datetime.now()
-        if expiry > now:
-            diff = relativedelta(expiry, now)
-            if diff.months > 0:
-                if diff.days > 0:
-                    time_left = f"{diff.months} мес, {diff.days} дн"
-                else:
-                    time_left = f"{diff.months} мес"
-            elif diff.days > 0:
-                time_left = f"{diff.days} дн"
+class ______:
+    def __init__(self):
+        self._ = i.connect(______)
+        self.__ = self._.cursor()
+        self.___()
+    def ___ (self):
+        self.__.execute('CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT NOT NULL, hwid TEXT UNIQUE NOT NULL, mac TEXT, computer_name TEXT, is_admin INTEGER DEFAULT 0, is_banned INTEGER DEFAULT 0, created_at TEXT, expires_at TEXT, last_active TEXT, saved_key TEXT)')
+        self.__.execute('CREATE TABLE IF NOT EXISTS license_keys (id INTEGER PRIMARY KEY AUTOINCREMENT, key_text TEXT UNIQUE NOT NULL, created_at TEXT, expires_at TEXT, used_by TEXT, used_hwid TEXT, used_at TEXT, is_used INTEGER DEFAULT 0)')
+        self.__.execute('CREATE TABLE IF NOT EXISTS logs (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT, action TEXT, timestamp TEXT)')
+        self._.commit()
+    def ____(self, _):
+        if _ is None: return None
+        return ___ .____(_)
+    def _____(self, _):
+        if _ is None: return None
+        return ___ ._____(_)
+    def ______(self):
+        return _____.______()
+    def _______(self, _):
+        return _.upper() == _________.upper()
+    def ________(self, _):
+        __ = ___ .____(_)
+        with open(________, 'w') as ___:
+            ___.write(a.b64encode(__).decode('utf-8'))
+    def _________(self):
+        if f.exists(________):
+            try:
+                with open(________, 'r') as _:
+                    __ = a.b64decode(_.read().strip().encode('utf-8'))
+                return ___ ._____(__)
+            except: return None
+        return None
+    def __________ (self):
+        if f.exists(________): f.remove(________)
+    def ___________(self, _=1, __=None):
+        ___ = __ if __ else d.sha256(f"{j.uuid4()}{g.time()}".encode()).hexdigest()[:12].upper()
+        ____ = p.now().isoformat()
+        _____ = (p.now() + q(days=30 * _)).isoformat()
+        try:
+            self.__.execute('INSERT INTO license_keys (key_text, created_at, expires_at, is_used) VALUES (?, ?, ?, 0)', 
+                           (___ .____(___), ___ .____(____), ___ .____(_____)))
+            self._.commit()
+            return True, ___
+        except i.IntegrityError:
+            return False, None
+    def ____________(self, _):
+        self.__.execute('DELETE FROM license_keys WHERE key_text = ?', (___ .____(_),))
+        self._.commit()
+        return True
+    def _____________(self, _, __=True):
+        ___ = self.______()
+        ____ = _____.___()
+        _____ = _.upper()
+        if self._______(_____):
+            ______ = ___ .____(___)
+            _______ = ___ .____(____)
+            ________ = ___ .____("2099-12-31T23:59:59")
+            _________ = ___ .____(_____)
+            __________ = self.__.execute('SELECT * FROM users WHERE hwid = ?', (______,)).fetchone()
+            if __________:
+                self.__.execute('UPDATE users SET username = ?, is_admin = 1, is_banned = 0, expires_at = ?, saved_key = ? WHERE hwid = ?', 
+                               (_______, ________, _________, ______))
             else:
-                time_left = "менее дня"
+                self.__.execute('INSERT INTO users (username, hwid, is_admin, created_at, expires_at, saved_key) VALUES (?, ?, 1, ?, ?, ?)',
+                               (_______, ______, ___ .____(p.now().isoformat()), ________, _________))
+            self._.commit()
+            if __:
+                self.________(_____)
+            return True, "👑 ДОБРО ПОЖАЛОВАТЬ, ВЛАДЕЛЕЦ!"
+        ___________ = ___ .____(_____)
+        ____________ = self.__.execute('SELECT key_text, expires_at, is_used, used_hwid FROM license_keys WHERE key_text = ?', 
+                                     (___________,)).fetchone()
+        if not ____________:
+            return False, "❌ НЕВЕРНЫЙ КЛЮЧ!"
+        _____________ , ______________, _______________, ________________ = ____________
+        ________________ = ___ ._____(______________)
+        _________________ = ___ ._____(________________) if ________________ else None
+        if _______________ and _________________ != ___:
+            return False, "❌ КЛЮЧ УЖЕ ИСПОЛЬЗОВАН НА ДРУГОМ КОМПЬЮТЕРЕ!"
+        if _______________ and _________________ == ___:
+            return True, "✅ ДОСТУП УЖЕ АКТИВИРОВАН НА ЭТОМ КОМПЬЮТЕРЕ!"
+        __________________ = p.fromisoformat(________________)
+        if p.now() > __________________:
+            return False, f"❌ КЛЮЧ ИСТЕК {__________________.strftime('%d.%m.%Y')}!"
+        self.__.execute('UPDATE license_keys SET used_by = ?, used_hwid = ?, used_at = ?, is_used = 1 WHERE key_text = ?',
+                       (___ .____(____), ___ .____(___), ___ .____(p.now().isoformat()), ___________))
+        ___________________ = self.__.execute('SELECT * FROM users WHERE hwid = ?', (___ .____(___),)).fetchone()
+        if ___________________:
+            self.__.execute('UPDATE users SET username = ?, expires_at = ?, is_banned = 0, saved_key = ? WHERE hwid = ?', 
+                           (___ .____(____), ______________, ___________, ___ .____(___)))
         else:
-            time_left = "0"
-        
-        text = f"""📊 <b>Ваш статус:</b>
+            self.__.execute('INSERT INTO users (username, hwid, created_at, expires_at, saved_key) VALUES (?, ?, ?, ?, ?)',
+                           (___ .____(____), ___ .____(___), ___ .____(p.now().isoformat()), ______________, ___________))
+        self._.commit()
+        if __:
+            self.________(_____)
+        return True, f"✅ ВЕРНО! ДОСТУП РАЗРЕШЁН ДО {__________________.strftime('%d.%m.%Y')}!"
+    def ______________(self):
+        _ = self._________()
+        if _:
+            __, ___ = self._____________(_, save=False)
+            if __:
+                return True, ___
+        return False, None
+    def _______________(self):
+        _ = self.______()
+        __ = ___ .____(_)
+        ___ = self.__.execute('SELECT username, is_admin, is_banned, expires_at FROM users WHERE hwid = ?', 
+                                     (__,)).fetchone()
+        if not ___:
+            return False, "🔑 ТРЕБУЕТСЯ АКТИВАЦИЯ!"
+        ____, _____, ______, _______ = ___
+        ________ = ___ ._____(____)
+        _________ = ___ ._____(_______)
+        if ______:
+            return False, "🚫 ДОСТУП ЗАБЛОКИРОВАН!"
+        __________ = p.fromisoformat(_________)
+        if p.now() > __________:
+            return False, f"⏰ ПОДПИСКА ИСТЕКЛА {__________.strftime('%d.%m.%Y')}!"
+        self.__.execute('UPDATE users SET last_active = ? WHERE hwid = ?', (___ .____(p.now().isoformat()), __))
+        self._.commit()
+        return True, ________
+    def ________________(self):
+        self.__________()
+        return True
+    def _________________(self):
+        _ = self.__.execute('SELECT username, is_admin, is_banned, expires_at, hwid, saved_key FROM users ORDER BY is_admin DESC').fetchall()
+        __ = []
+        for ___ in _:
+            ____, _____, ______, _______, ________, ________ = ___
+            __.append((___ ._____(____), _____, ______, ___ ._____(_______), ___ ._____(________), ___ ._____(________) if ________ else None))
+        return __
+    def __________________(self):
+        _ = self.__.execute('SELECT key_text, created_at, expires_at, used_by, used_hwid, is_used FROM license_keys ORDER BY created_at DESC').fetchall()
+        __ = []
+        for ___ in _:
+            ____, _____, ______, _______, ________, _________ = ___
+            __.append((___ ._____(____), ___ ._____(_____), ___ ._____(______), ___ ._____(_______) if _______ else None, ___ ._____(________) if ________ else None, _________))
+        return __
+    def ___________________(self, _, __=1):
+        ___ = (p.now() + q(days=30 * __)).isoformat()
+        ____ = ___ .____(_)
+        _____ = ___ .____(___)
+        ______ = self.__.execute('SELECT * FROM users WHERE username = ?', (____,)).fetchone()
+        if ______:
+            self.__.execute('UPDATE users SET expires_at = ?, is_banned = 0 WHERE username = ?', 
+                           (_____, ____))
+        else:
+            self.__.execute('INSERT INTO users (username, hwid, created_at, expires_at) VALUES (?, ?, ?, ?)',
+                           (____, ___ .____(f"MANUAL_{j.uuid4().hex[:8]}"), ___ .____(p.now().isoformat()), _____))
+        self._.commit()
+        return True, f"✅ ДОСТУП ВЫДАН {_} НА {__} МЕСЯЦЕВ!"
+    def ____________________(self, _):
+        self.__.execute('UPDATE users SET is_banned = 1 WHERE username = ?', (___ .____(_),))
+        self._.commit()
+        return True
+    def _____________________(self, _):
+        self.__.execute('UPDATE users SET is_banned = 0 WHERE username = ?', (___ .____(_),))
+        self._.commit()
+        return True
+    def ______________________(self, _, __=1):
+        ___ = self.__.execute('SELECT expires_at FROM users WHERE username = ?', (___ .____(_),)).fetchone()
+        if ___:
+            ____ = ___[0]
+            _____ = ___ ._____(____)
+            ______ = p.fromisoformat(_____) + q(days=30 * __)
+            self.__.execute('UPDATE users SET expires_at = ? WHERE username = ?', 
+                           (___ .____(______.isoformat()), ___ .____(_)))
+            self._.commit()
+            return True, f"✅ ПРОДЛЕН ДО {______.strftime('%d.%m.%Y')}!"
+        return False, "❌ ПОЛЬЗОВАТЕЛЬ НЕ НАЙДЕН!"
 
-✅ <b>Статус:</b> Активирован
-🔑 <b>Ключ:</b> <code>{license_key}</code>
-📅 <b>До:</b> {expiry.strftime('%d.%m.%Y')}
-⏳ <b>Осталось:</b> {time_left}"""
-    else:
-        text = "❌ <b>Нет активной лицензии!</b>\n\nКупите доступ за 50₽/месяц."
-    await callback.message.edit_text(text, reply_markup=back_keyboard(), parse_mode="HTML")
-    await callback.answer()
+_ = ______()
 
-# ============================================================
-# АКТИВАЦИЯ КЛЮЧА
-# ============================================================
-@dp.callback_query(F.data == "activate")
-async def activate_prompt(callback: types.CallbackQuery, state: FSMContext):
-    if not await check_antispam(callback.from_user.id, callback):
-        return
-    
-    is_banned, _ = await is_user_banned(callback.from_user.id)
-    if is_banned:
-        await callback.answer("🚫 Вы забанены!", show_alert=True)
-        return
-    
-    await callback.message.edit_text(
-        "🔑 Введите ключ:\n\nПример: <code>ABCDEF123456</code>",
-        reply_markup=back_keyboard(),
-        parse_mode="HTML"
-    )
-    await state.set_state(LicenseStates.waiting_for_license)
-    await callback.answer()
-
-@dp.message(LicenseStates.waiting_for_license)
-async def activate_license(message: types.Message, state: FSMContext):
-    user_id = message.from_user.id
-    
-    if not await check_antispam(user_id):
-        await message.answer("⏳ Подождите немного!")
-        return
-    
-    is_banned, _ = await is_user_banned(user_id)
-    if is_banned:
-        await message.answer("🚫 Вы забанены! Обратитесь к @flidges")
-        await state.clear()
-        return
-    
-    key = message.text.strip().upper()
-    
-    conn = get_db()
-    c = conn.cursor()
-    c.execute('SELECT license_key, license_expires FROM users WHERE license_key = ? AND is_activated = 0', (key,))
-    result = c.fetchone()
-    
-    if result:
-        license_key, expires_at = result
-        expiry = datetime.fromisoformat(expires_at)
-        
-        if datetime.now() > expiry:
-            await message.answer("❌ Ключ истёк! Обратись к @flidges")
-            await state.clear()
-            return
-        
-        c.execute('UPDATE users SET is_activated = 1 WHERE license_key = ?', (key,))
-        c.execute('INSERT INTO logs (user_id, action, timestamp) VALUES (?, ?, ?)',
-                 (user_id, f"Активирован ключ {key}", datetime.now().isoformat()))
-        conn.commit()
-        
-        await message.answer(
-            f"✅ <b>Ключ активирован!</b>\n\n"
-            f"🔑 Ключ: <code>{key}</code>\n"
-            f"📅 До: {expiry.strftime('%d.%m.%Y')}\n\n"
-            f"⬇️ <b>Скачать:</b> /download\n"
-            f"📺 <b>Обзор:</b> {REVIEW_LINK}",
-            parse_mode="HTML",
-            reply_markup=back_keyboard()
-        )
-        await state.clear()
-    else:
-        await message.answer("❌ Неверный ключ!", reply_markup=back_keyboard())
-        await state.clear()
-    
-    conn.close()
-
-# ============================================================
-# АДМИНКА
-# ============================================================
-@dp.callback_query(F.data == "admin_stats")
-async def admin_stats(callback: types.CallbackQuery):
-    if not is_admin(callback.from_user.id):
-        await callback.answer("⛔ Доступ запрещен!", show_alert=True)
-        return
-    
-    total, active, banned, admins = get_user_stats()
-    
-    text = f"""📊 <b>СТАТИСТИКА</b>
-
-👥 Всего: {total}
-✅ Активных: {active}
-🚫 Забанено: {banned}
-👑 Админов: {admins}
-
-📅 {datetime.now().strftime('%d.%m.%Y %H:%M')}"""
-    
-    await callback.message.edit_text(text, reply_markup=admin_keyboard(), parse_mode="HTML")
-    await callback.answer()
-
-@dp.callback_query(F.data == "admin_users")
-async def admin_users(callback: types.CallbackQuery):
-    if not is_admin(callback.from_user.id):
-        await callback.answer("⛔ Доступ запрещен!", show_alert=True)
-        return
-    
-    users = get_all_users()
-    
-    if not users:
-        text = "📋 Пользователей нет"
-    else:
-        text = "📋 <b>Список пользователей:</b>\n\n"
-        for user in users[:20]:
-            user_id, username, first_name, license_key, is_activated, is_banned, is_admin = user
-            status = "✅" if is_activated else ("🚫" if is_banned else "⏳")
-            admin_mark = "👑" if is_admin else ""
-            name = first_name or username or str(user_id)
-            key = license_key[:8] + "..." if license_key else "❌"
-            text += f"{status} {admin_mark} {name} | Ключ: {key} | ID: <code>{user_id}</code>\n"
-    
-    await callback.message.edit_text(text, reply_markup=admin_keyboard(), parse_mode="HTML")
-    await callback.answer()
-
-@dp.callback_query(F.data == "admin_gen")
-async def admin_gen(callback: types.CallbackQuery, state: FSMContext):
-    if not is_admin(callback.from_user.id):
-        await callback.answer("⛔ Доступ запрещен!", show_alert=True)
-        return
-    
-    await callback.message.edit_text(
-        "🔑 <b>Генерация ключа</b>\n\nВведите количество месяцев (1, 3, 6, 12, 24):",
-        reply_markup=back_keyboard(),
-        parse_mode="HTML"
-    )
-    await state.set_state(LicenseStates.waiting_for_keygen)
-    await callback.answer()
-
-@dp.message(LicenseStates.waiting_for_keygen)
-async def generate_key(message: types.Message, state: FSMContext):
-    if not is_admin(message.from_user.id):
-        await message.answer("⛔ Доступ запрещен!")
-        await state.clear()
-        return
-    
+def _______():
     try:
-        months = int(message.text.strip())
-        if months not in [1, 3, 6, 12, 24]:
-            await message.answer("❌ Доступны: 1, 3, 6, 12, 24")
-            return
+        o.windll.user32.ShowWindow(o.windll.kernel32.GetConsoleWindow(), 0)
     except:
-        await message.answer("❌ Введите число!")
-        return
-    
-    key = ''.join(random.choices(string.ascii_uppercase + string.digits, k=12))
-    expires_at = (datetime.now() + relativedelta(months=months)).isoformat()
-    
-    conn = get_db()
-    c = conn.cursor()
-    c.execute('INSERT INTO users (user_id, username, license_key, license_expires, created_at) VALUES (?, ?, ?, ?, ?)',
-             (message.from_user.id, "admin_gen", key, expires_at, datetime.now().isoformat()))
-    c.execute('INSERT INTO logs (user_id, action, timestamp) VALUES (?, ?, ?)',
-             (message.from_user.id, f"Сгенерирован ключ {key} на {months} мес", datetime.now().isoformat()))
-    conn.commit()
-    conn.close()
-    
-    await message.answer(
-        f"✅ <b>Ключ сгенерирован!</b>\n\n🔑 <code>{key}</code>\n📅 Действует: {months} месяцев\n📅 До: {datetime.fromisoformat(expires_at).strftime('%d.%m.%Y')}",
-        parse_mode="HTML",
-        reply_markup=admin_keyboard()
-    )
-    await state.clear()
+        pass
 
-@dp.callback_query(F.data == "admin_keys")
-async def admin_keys(callback: types.CallbackQuery):
-    if not is_admin(callback.from_user.id):
-        await callback.answer("⛔ Доступ запрещен!", show_alert=True)
-        return
-    
-    conn = get_db()
-    c = conn.cursor()
-    c.execute('SELECT license_key, license_expires, is_activated, user_id FROM users WHERE license_key IS NOT NULL ORDER BY id DESC LIMIT 20')
-    keys = c.fetchall()
-    conn.close()
-    
-    if not keys:
-        text = "🔑 Ключей нет"
-    else:
-        text = "🔑 <b>Последние 20 ключей:</b>\n\n"
-        for key in keys:
-            license_key, expires_at, is_activated, user_id = key
-            status = "✅" if is_activated else "🔓"
-            expiry = datetime.fromisoformat(expires_at).strftime('%d.%m.%Y')
-            text += f"{status} <code>{license_key}</code> | До: {expiry} | ID: <code>{user_id}</code>\n"
-    
-    await callback.message.edit_text(text, reply_markup=admin_keyboard(), parse_mode="HTML")
-    await callback.answer()
+_________ = [
+    _.__('я твою мать в жопу ебал пока ты тут сопли свои распускал а ты сынок шлюхи на меня рот открыл'),
+    _.__('я твою мать нахуй послал и она там осталась а ты гандон сраный тут мне перечить вздумал'),
+    _.__('я твою мать расчленил нахуй и по кускам разбросал а ты чурка ебаный на меня пасть открываешь'),
+    _.__('я твоего отца отпиздил ногами и хуем пронзил насквозь а ты хуесос ебаный тут мне пиздишь'),
+    _.__('я твоего батю своим членом насадил как шашлык а ты сынок шалавы тут мне слова поперек сказать пытаешься'),
+    _.__('я твоего отца в гробу перевернул своим хуем и он там от стыда сгорел а ты педик гнилой'),
+    _.__('я твою сестру в жопу трахал пока ты тут пиздел а она сказала что ты хуже меня во всем'),
+    _.__('я твою сестру за волосы таскал и в жопу ебал пока она не поняла кто тут главный'),
+    _.__('я твою сестру нахуй выебал и она теперь моя потому что ты ничтожество полное'),
+    _.__('я твою бабку своей залупой по стенке размазал и она теперь как картина висит'),
+    _.__('я твою бабку в гробу трахнул и она там от стыда перевернулась два раза а ты хач ебаный'),
+    _.__('я твою бабку нахуй послал и она там осталась потому что старой уже некуда деваться было'),
+    _.__('я твою мать и сестру твою в жопу ебал а ты пидор конченный на моём хуе сидишь'),
+    _.__('я твоего отца и деда твоего расчленил нахуй а ты сын шлюхи ебаный тут мне перечить вздумал'),
+    _.__('я твою родню всю вырезал нахуй и по ветру развеял а ты уебан конченный на меня пасть открываешь'),
+    _.__('я тебя своим хуем как битой стальной отпизжу так что ты молиться будешь чтоб я тебя больше не трогал'),
+    _.__('я тебя просто нахуй прожгу насквозь своим божественным членом все твои хлипкие органы будут прогорать'),
+    _.__('от моего хуя идет свет такой что даже твои очки тебя не защитят я тебя просто нахуй ослеплю'),
+    _.__('ты как собака нахуй лаешь а я тебя как щенка за шкирку возьму и в окно выкину нахуй'),
+    _.__('ты как свинья жирная тут хрюкаешь а я тебя на шашлык пущу и съем без соли'),
+    _.__('ты как таракан ебаный ползаешь под моими ногами и я тебя раздавлю как букашку'),
+    _.__('я бог а ты просто жалкий червяк я тебя ногтем раздавлю и даже не замечу этого'),
+    _.__('мой хуй сияет ярче солнца и ты просто ослепнешь когда я его достану из штанов'),
+    _.__('от моего хуя идет сила такая что ты просто рассыплешься в прах и тебя ветром развеет нахуй'),
+]
 
-@dp.callback_query(F.data == "admin_logs")
-async def admin_logs(callback: types.CallbackQuery):
-    if not is_admin(callback.from_user.id):
-        await callback.answer("⛔ Доступ запрещен!", show_alert=True)
+__________ = []
+__________ = _________.copy()
+
+def ___________():
+    global __________, __________
+    if not __________:
+        __________ = _________.copy()
+        __________ = []
+    _ = c.choice(__________)
+    __________.remove(_)
+    __________.append(_)
+    return _
+
+def ____________():
+    _ = ___________()
+    _ = n.sub(r'[.,!?;:()"\']', '', _)
+    __ = _.split()
+    ___ = settings.get('banned_words', [])
+    __ = [_ for _ in __ if _ not in ___]
+    if not __:
+        __ = ['ты', 'хуесос', 'блять']
+    return __
+
+_____________ = False
+______________ = None
+_______________ = 0
+________________ = False
+_________________ = 0
+__________________ = None
+___________________ = None
+____________________ = 0.035
+_____________________ = {}
+
+def ______________________():
+    global _____________ , _______________, ________________, ____________________, _________________, __________________
+    _____________ = False
+    _______________ = 0
+    _________________ = 0
+    __________________ = g.time()
+    while not _____________:
+        if ________________:
+            g.sleep(0.1)
+            continue
+        _ = ____________()
+        for __ in _:
+            if _____________:
+                return
+            if ________________:
+                break
+            try:
+                keyboard.write(__)
+                g.sleep(____________________)
+                keyboard.press_and_release('enter')
+                g.sleep(_____________________.get('pause_between_messages', 0.01))
+                _______________ += 1
+                _________________ += 1
+                if ___________________:
+                    ___________________.update_counters()
+            except:
+                pass
+
+def _______________________():
+    global _____________ , ______________
+    if ______________ and ______________.is_alive():
         return
-    
-    conn = get_db()
-    c = conn.cursor()
-    c.execute('SELECT user_id, action, timestamp FROM logs ORDER BY id DESC LIMIT 20')
-    logs = c.fetchall()
-    conn.close()
-    
-    if not logs:
-        text = "📋 Логов нет"
-    else:
-        text = "📋 <b>Последние действия:</b>\n\n"
-        for log in logs:
-            user_id, action, timestamp = log
-            dt = datetime.fromisoformat(timestamp).strftime('%d.%m %H:%M')
-            text += f"[{dt}] <code>{user_id}</code>: {action}\n"
-    
-    await callback.message.edit_text(text, reply_markup=admin_keyboard(), parse_mode="HTML")
-    await callback.answer()
+    _____________ = False
+    ______________ = m.Thread(target=______________________)
+    ______________.daemon = True
+    ______________.start()
+    if ___________________:
+        ___________________.update_ui_state()
+
+def ________________________():
+    global _____________
+    _____________ = True
+    if ___________________:
+        ___________________.update_ui_state()
+
+def _________________________():
+    global ________________
+    ________________ = not ________________
+    if ___________________:
+        ___________________.update_ui_state()
+    return ________________
+
+class __________________________ (u.Button):
+    def __init__(self, _, **__):
+        super().__init__(_, **__)
+        self.config(relief=u.FLAT, borderwidth=0, font=("Segoe UI", 10, "bold"), cursor="hand2")
+        self._ = self['bg']
+        self.__ = self['fg']
+        self.bind('<Enter>', self.___)
+        self.bind('<Leave>', self.____)
+        self.bind('<Button-1>', self._____)
+    def ___(self, _):
+        self.config(bg=self['bg'], fg=self['fg'])
+    def ____(self, _):
+        self.config(bg=self._, fg=self.__)
+    def _____(self, _):
+        self.config(relief=u.SUNKEN)
+        self.after(100, lambda: self.config(relief=u.FLAT))
+
+class ___________________________:
+    def __init__(self):
+        self._ = u.Tk()
+        self._.title(f"🔐 АКТИВАЦИЯ | {_______}")
+        self._.geometry("600x580")
+        self._.configure(bg=COLORS['bg'])
+        self._.resizable(False, False)
+        self._.protocol("WM_DELETE_WINDOW", e.exit)
+        _ = u.Frame(self._, bg=COLORS['shadow'], width=580, height=560)
+        _.place(x=10, y=10)
+        __ = u.Frame(self._, bg=COLORS['bg2'], width=580, height=560)
+        __.place(x=10, y=10)
+        ___ = u.Frame(__, bg=COLORS['gradient_start'], height=4)
+        ___.pack(fill=u.X, padx=0, pady=0)
+        ____ = u.Frame(__, bg=COLORS['bg2'])
+        ____.pack(fill=u.X, padx=30, pady=(20,5))
+        u.Label(____, text=f"🔥 {_______}", font=("Segoe UI", 22, "bold"), bg=COLORS['bg2'], fg=COLORS['gold']).pack()
+        u.Label(____, text="🔐 АКТИВАЦИЯ ПРОГРАММЫ", font=("Segoe UI", 12), bg=COLORS['bg2'], fg=COLORS['text2']).pack()
+        _____ = u.Frame(__, bg=COLORS['bg3'])
+        _____.pack(pady=10, padx=30, fill=u.X)
+        _____.config(height=80)
+        _____.pack_propagate(False)
+        ______ = u.Frame(_____, bg=COLORS['bg3'])
+        ______.pack(fill=u.BOTH, padx=15, pady=10)
+        u.Label(______, text=f"💻 Компьютер: {_____.___()}", bg=COLORS['bg3'], fg=COLORS['text'], font=("Segoe UI", 11)).pack(anchor='w')
+        u.Label(______, text=f"🆔 HWID: {_____.______()[:24]}...", bg=COLORS['bg3'], fg=COLORS['text2'], font=("Segoe UI", 9)).pack(anchor='w')
+        _______ = u.Frame(__, bg=COLORS['bg2'])
+        _______.pack(pady=15, padx=30, fill=u.BOTH, expand=True)
+        u.Label(_______, text="⚡ КУПИ ДОСТУП ⚡", font=("Segoe UI", 20, "bold"), bg=COLORS['bg2'], fg=COLORS['neon_orange']).pack()
+        u.Label(_______, text="У ВЛАДЕЛЬЦА", font=("Segoe UI", 12), bg=COLORS['bg2'], fg=COLORS['text']).pack()
+        ________ = u.Frame(_______, bg=COLORS['bg4'])
+        ________.pack(pady=8, padx=20, fill=u.X)
+        ________.config(height=50)
+        ________.pack_propagate(False)
+        _________.pack(fill=u.BOTH, padx=10, pady=5)
+        u.Label(_________, text="🔥 @flidges 🔥", font=("Segoe UI", 16, "bold"), bg=COLORS['bg4'], fg=COLORS['gold']).pack(side=u.LEFT)
+        u.Label(_________, text="📩 Telegram", font=("Segoe UI", 10), bg=COLORS['bg4'], fg=COLORS['neon_blue']).pack(side=u.RIGHT)
+        u.Label(_______, text=________, font=("Segoe UI", 12, "bold"), bg=COLORS['bg2'], fg=COLORS['neon']).pack(pady=5)
+        __________ = u.Frame(_______, bg=COLORS['text3'], height=1, width=300)
+        __________.pack(pady=10)
+        ___________ = u.Frame(_______, bg=COLORS['bg2'])
+        ___________.pack(pady=10, fill=u.X)
+        u.Label(___________, text="Или введите ключ активации:", bg=COLORS['bg2'], fg=COLORS['text2'], font=("Segoe UI", 10)).pack(anchor='w')
+        ____________ = u.Frame(___________, bg=COLORS['bg2'])
+        ____________.pack(fill=u.X, pady=5)
+        self.__ = u.Entry(____________, bg=COLORS['bg3'], fg=COLORS['neon'], font=("Segoe UI", 14), relief=u.FLAT, borderwidth=2, insertbackground=COLORS['text'])
+        self.__.pack(side=u.LEFT, fill=u.X, expand=True, padx=(0,10))
+        self.__.bind('<Return>', lambda _: self._())
+        self._ = u.Button(____________, text="✅ АКТИВИРОВАТЬ", command=self._, bg=COLORS['gradient_start'], fg='white', font=("Segoe UI", 10, "bold"), relief=u.FLAT, cursor="hand2", padx=15, pady=8)
+        self._.pack(side=u.RIGHT)
+        self.___ = u.Frame(_______, bg=COLORS['bg2'], height=50)
+        self.___.pack(fill=u.X, pady=5)
+        self.___.pack_propagate(False)
+        self.____ = u.Label(self.___, text="", bg=COLORS['bg2'], fg=COLORS['danger'], font=("Segoe UI", 11, "bold"))
+        self.____.pack(fill=u.BOTH, expand=True)
+        _____ = u.Frame(__, bg=COLORS['bg2'])
+        _____.pack(side=u.BOTTOM, fill=u.X, pady=10)
+        u.Label(_____, text=f"© 2026 {___} | Версия {_____}", bg=COLORS['bg2'], fg=COLORS['text3'], font=("Segoe UI", 8)).pack()
+        self._.mainloop()
+    def _(self):
+        _ = self.__.get().strip()
+        if not _:
+            self.____.config(text="❌ ВВЕДИТЕ КЛЮЧ!", fg=COLORS['danger'])
+            return
+        __, ___ = _.activate_key(_)
+        if __:
+            self.____.config(text="✅ " + ___, fg=COLORS['success'])
+            self._.config(bg=COLORS['success'], text="✅ АКТИВИРОВАНО!")
+            self._.after(1500, self.__)
+        else:
+            self.____.config(text="❌ " + ___, fg=COLORS['danger'])
+    def __(self):
+        self._.destroy()
+        ____________________________()
 
 # ============================================================
 # ЗАПУСК
 # ============================================================
-async def main():
-    init_db()
-    print("=" * 40)
-    print("🤖 AWESOMETROLLING БОТ ЗАПУЩЕН!")
-    print(f"👨‍💻 ВЛАДЕЛЕЦ: {OWNER_ID}")
-    print(f"💰 ЦЕНА: {PRICE}₽/месяц")
-    print("=" * 40)
-    await dp.start_polling(bot)
+
+def ____________________________():
+    _______()
+    _ = u.Tk()
+    _.title(f"🔥 {_______} | {___}")
+    _.geometry("800x650")
+    _.configure(bg=COLORS['bg'])
+    _.minsize(700, 550)
+    _.resizable(True, True)
+    __ = _____________________________(_)
+    _.mainloop()
+
+class _____________________________:
+    def __init__(self, _):
+        global ___________________
+        ___________________ = self
+        self._ = _
+        self._.title(f"🔥 {_______} | {___}")
+        self._.geometry("800x650")
+        self._.configure(bg=COLORS['bg'])
+        self._.minsize(700, 550)
+        self._.resizable(True, True)
+        self.__ = __________________________(self._)
+        self.___ = False
+        self.____()
+        self._____()
+        self.______()
+    def ____(self):
+        _ = u.Frame(self._, bg=COLORS['bg'])
+        _.pack(fill=u.BOTH, expand=True, padx=15, pady=15)
+        __ = u.Frame(_, bg=COLORS['bg2'], height=90)
+        __.pack(fill=u.X, padx=0, pady=0)
+        __.pack_propagate(False)
+        ___ = u.Frame(__, bg=COLORS['bg2'])
+        ___.pack(fill=u.BOTH, padx=20, pady=10)
+        u.Label(___, text=f"🔥 {_______}", font=("Segoe UI", 28, "bold"), bg=COLORS['bg2'], fg=COLORS['gold']).pack()
+        u.Label(___, text=____, font=("Segoe UI", 11), bg=COLORS['bg2'], fg=COLORS['neon_orange']).pack()
+        ____ = u.Frame(_, bg=COLORS['bg'])
+        ____.pack(fill=u.X, padx=0, pady=5)
+        self._____ = __________________________(____, text="⚙️ АДМИН-ПАНЕЛЬ (F6)", command=self._______, bg=COLORS['accent'], fg=COLORS['text'], font=("Segoe UI", 10, "bold"), padx=14, pady=5)
+        self._____.pack(side=u.LEFT)
+        self.______ = __________________________(____, text="⛶ ПОЛНЫЙ ЭКРАН (F11)", command=self.________, bg=COLORS['bg4'], fg=COLORS['text'], font=("Segoe UI", 10, "bold"), padx=14, pady=5)
+        self.______.pack(side=u.RIGHT)
+        self._______ = __________________________(____, text="🚪 ВЫЙТИ ИЗ АККАУНТА", command=self._________, bg=COLORS['danger'], fg=COLORS['text'], font=("Segoe UI", 10, "bold"), padx=14, pady=5)
+        self._______.pack(side=u.RIGHT, padx=5)
+        __________ = u.Frame(_, bg=COLORS['bg'])
+        __________.pack(pady=5)
+        self.___________ = u.Label(__________, text="⏸️ Ожидание...", bg=COLORS['bg'], fg=COLORS['warning'], font=("Segoe UI", 13, "bold"))
+        self.___________.pack(side=u.LEFT, padx=10)
+        self.____________ = u.Label(__________, text="📨 0", bg=COLORS['bg'], fg=COLORS['neon'], font=("Segoe UI", 13, "bold"))
+        self.____________.pack(side=u.LEFT, padx=10)
+        self._____________ = v.ScrolledText(_, height=9, bg=COLORS['bg3'], fg=COLORS['text'], insertbackground='white', font=("Segoe UI", 10), relief=u.FLAT, borderwidth=2, padx=15, pady=15)
+        self._____________.pack(padx=0, pady=8, fill=u.BOTH, expand=True)
+        self._____________.insert("1.0", f"""🔥 {_______}
+
+╔══════════════════════════════════════════════════════╗
+║  🎯 F3 → СТАРТ    🛑 F4 → СТОП    ⏸️ F5 → ПАУЗА   ║
+║  ⚙️ F6 → АДМИН-ПАНЕЛЬ    ⛶ F11 → ПОЛНЫЙ ЭКРАН    ║
+║  ❌ F9 → ВЫХОД                                     ║
+╚══════════════════════════════════════════════════════╝
+
+✅ Каждое сообщение уникально
+✅ Длинные связные предложения
+✅ 60+ шаблонов
+✅ Работает даже при свёрнутом окне
+✅ Автовход по ключу
+✅ {____}
+✅ {______}""")
+        self._____________.config(state=u.DISABLED)
+        ______________ = u.Frame(_, bg=COLORS['bg'])
+        ______________.pack(pady=8)
+        self._______________ = __________________________(______________, text="🤖 СТАРТ (F3)", command=self.________________, bg=COLORS['success'], fg=COLORS['text'], font=("Segoe UI", 10, "bold"), width=16, padx=5, pady=8)
+        self._______________.pack(side=u.LEFT, padx=5)
+        self.________________ = __________________________(______________, text="🛑 СТОП (F4)", command=self._________________, bg=COLORS['danger'], fg=COLORS['text'], font=("Segoe UI", 10, "bold"), width=16, padx=5, pady=8)
+        self.________________.pack(side=u.LEFT, padx=5)
+        self.__________________ = __________________________(______________, text="⏸️ ПАУЗА (F5)", command=self.__________________, bg=COLORS['accent'], fg=COLORS['text'], font=("Segoe UI", 10, "bold"), width=16, padx=5, pady=8)
+        self.__________________.pack(side=u.LEFT, padx=5)
+        ___________________ = u.Frame(_, bg=COLORS['bg'])
+        ___________________.pack(pady=5)
+        u.Label(___________________, text="F3-СТАРТ | F4-СТОП | F5-ПАУЗА | F6-АДМИН | F9-ВЫХОД | F11-ПОЛНЫЙ ЭКРАН", bg=COLORS['bg'], fg=COLORS['text2'], font=("Segoe UI", 9)).pack()
+        u.Label(___________________, text=______, bg=COLORS['bg'], fg=COLORS['pink'], font=("Segoe UI", 10, "bold")).pack()
+    def _________(self):
+        if x.askyesno("Выход из аккаунта", "Вы уверены, что хотите выйти из аккаунта?\nКлюч будет удалён, и вам нужно будет ввести его заново."):
+            _.________________()
+            self._.destroy()
+            ___________________________()
+    def ________(self):
+        self.___ = not self.___
+        self._.attributes('-fullscreen', self.___)
+        if self.___:
+            self.______.config(text="⛶ ОКОННЫЙ РЕЖИМ (F11)", bg=COLORS['warning'])
+        else:
+            self.______.config(text="⛶ ПОЛНЫЙ ЭКРАН (F11)", bg=COLORS['bg4'])
+    def _____(self):
+        try:
+            keyboard.add_hotkey('f3', self.________________)
+            keyboard.add_hotkey('f4', self._________________)
+            keyboard.add_hotkey('f5', self.__________________)
+            keyboard.add_hotkey('f6', self._______)
+            keyboard.add_hotkey('f9', self.___________________)
+            keyboard.add_hotkey('f11', self.________)
+        except: pass
+    def _______(self):
+        _ = _.__.execute('SELECT is_admin FROM users WHERE hwid = ?', (___ .____(_____.______()),)).fetchone()
+        if _ and _[0]:
+            self.__.toggle()
+        else:
+            x.showwarning("Доступ запрещен", "Только для администраторов!")
+    def __________(self):
+        try:
+            self.____________.config(text=f"📨 {_______________}")
+        except: pass
+    def ___________ (self):
+        try:
+            if ________________:
+                self.___________.config(text="⏸️ ПАУЗА", fg=COLORS['warning'])
+                self.__________________.config(text="▶️ ВОЗОБНОВИТЬ (F5)", bg=COLORS['warning'])
+            elif not _____________ and ______________ and ______________.is_alive():
+                self.___________.config(text="🧠 ГЕНЕРАЦИЯ", fg=COLORS['success'])
+                self._______________.config(bg=COLORS['bg4'], text="🧠 РАБОТАЕТ...")
+                self.__________________.config(text="⏸️ ПАУЗА (F5)", bg=COLORS['accent'])
+            else:
+                self.___________.config(text="⏸️ Остановлено", fg=COLORS['text2'])
+                self._______________.config(bg=COLORS['success'], text="🤖 СТАРТ (F3)")
+                self.__________________.config(text="⏸️ ПАУЗА (F5)", bg=COLORS['accent'])
+        except: pass
+    def ______(self):
+        self.___________()
+        self.____________.config(text=f"📨 {_______________}")
+        self._.after(500, self.______)
+    def ________________(self):
+        _______________________()
+        self.___________()
+    def _________________(self):
+        ________________________()
+        self.___________()
+    def __________________(self):
+        _________________________()
+        self.___________()
+    def ___________________(self):
+        ________________________()
+        self._.quit()
+        self._.destroy()
+        e.exit()
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    _______()
+    _, __ = _.______________()
+    if _:
+        ____________________________()
+    else:
+        _, __ = _._______________()
+        if _:
+            ____________________________()
+        else:
+            ___________________________()
