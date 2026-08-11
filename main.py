@@ -53,10 +53,8 @@ class CloudDB:
             if response.status_code in [200, 201, 204]:
                 return response.json() if response.text else True
             else:
-                print(f"❌ Ошибка CloudDB: {response.status_code} - {response.text}")
                 return None
-        except Exception as e:
-            print(f"❌ Ошибка CloudDB: {e}")
+        except:
             return None
     
     @classmethod
@@ -75,11 +73,6 @@ class CloudDB:
     def get_all_users(cls):
         result = cls._request("GET", "users?order=id.desc")
         return result if result else []
-    
-    @classmethod
-    def get_user_by_hwid(cls, hwid):
-        result = cls._request("GET", f"users?hwid=eq.{hwid}")
-        return result[0] if result else None
     
     @classmethod
     def insert_key(cls, key_text, expires_at, owner_hwid):
@@ -356,8 +349,8 @@ class UserDB:
         
         try:
             CloudDB.insert_key(key, expires_at, owner_hwid)
-        except Exception as e:
-            print(f"❌ Ошибка сохранения в облако: {e}")
+        except:
+            pass
         
         return True, key
     
@@ -396,8 +389,8 @@ class UserDB:
             
             try:
                 CloudDB.insert_user(username, hwid, "2099-12-31T23:59:59", key_upper, 1, 1)
-            except Exception as e:
-                print(f"❌ Ошибка сохранения овнера: {e}")
+            except:
+                pass
             
             return True, "👑 ДОБРО ПОЖАЛОВАТЬ, ОВНЕР!"
         
@@ -455,8 +448,8 @@ class UserDB:
         try:
             CloudDB.insert_user(username, hwid, expires_at, key_upper, 0, 0)
             CloudDB.activate_key_cloud(key_upper, username, hwid)
-        except Exception as e:
-            print(f"❌ Ошибка сохранения в облако: {e}")
+        except:
+            pass
         
         return True, f"✅ ВЕРНО! ДОСТУП ДО {expiry.strftime('%d.%m.%Y')}!"
     
@@ -513,8 +506,8 @@ class UserDB:
                         u.get('saved_key', '')
                     ))
                 return decrypted_users
-        except Exception as e:
-            print(f"❌ Ошибка загрузки из облака: {e}")
+        except:
+            pass
         
         users = self.cursor.execute('''SELECT username, is_owner, is_admin, is_banned, 
             expires_at, hwid, saved_key FROM users ORDER BY is_owner DESC, is_admin DESC''').fetchall()
@@ -548,8 +541,8 @@ class UserDB:
                         k.get('owner_hwid', '')
                     ))
                 return decrypted_keys
-        except Exception as e:
-            print(f"❌ Ошибка загрузки ключей из облака: {e}")
+        except:
+            pass
         
         keys = self.cursor.execute('''SELECT key_text, created_at, expires_at, 
             used_by, used_hwid, is_used, owner_hwid 
@@ -749,7 +742,7 @@ class GlowButton(tk.Button):
         self.after(100, lambda: self.config(relief=tk.FLAT))
 
 # ============================================================
-# ЗВЕЗДЫ НА ФОНЕ (ИСПРАВЛЕНО)
+# ЗВЕЗДЫ НА ФОНЕ
 # ============================================================
 
 class StarBackground:
@@ -781,7 +774,6 @@ class StarBackground:
             width = self.canvas.winfo_reqwidth() or 800
             height = self.canvas.winfo_reqheight() or 600
             
-            # ← ИСПРАВЛЕНО! РАЗДЕЛИЛИ НА ДВЕ СТРОКИ
             if star['x'] < 0:
                 star['x'] = width
             if star['x'] > width:
@@ -928,6 +920,29 @@ class ActivationWindow:
         start_program()
 
 # ============================================================
+# ГЛАВНОЕ ПРИЛОЖЕНИЕ
+# ============================================================
+
+def start_program():
+    hide_console()
+    root = tk.Tk()
+    root.title(f"🔥 {APP_NAME} | {DEVELOPER}")
+    root.geometry("900x700")
+    root.configure(bg=COLORS['bg'])
+    root.minsize(800, 650)
+    root.resizable(True, True)
+    
+    root.update_idletasks()
+    width = 900
+    height = 700
+    x = (root.winfo_screenwidth() // 2) - (width // 2)
+    y = (root.winfo_screenheight() // 2) - (height // 2)
+    root.geometry(f'{width}x{height}+{x}+{y}')
+    
+    app = InsultApp(root)
+    root.mainloop()
+
+# ============================================================
 # InsultApp
 # ============================================================
 
@@ -943,7 +958,6 @@ class InsultApp:
         self.root.minsize(800, 650)
         self.root.resizable(True, True)
         
-        # Проверка админа
         hwid = ComputerID.get_full_hwid()
         self.is_admin = False
         
@@ -955,18 +969,15 @@ class InsultApp:
             if user and (user[0] == 1 or user[1] == 1):
                 self.is_admin = True
         
-        # Фон
         self.canvas = tk.Canvas(self.root, bg=COLORS['bg'], highlightthickness=0)
         self.canvas.pack(fill=tk.BOTH, expand=True)
         self.stars = StarBackground(self.canvas, 200)
         self.stars.update()
         
-        # Фрейм
         main_frame = tk.Frame(self.canvas, bg=COLORS['bg2'], bd=2, relief=tk.FLAT)
         main_frame.place(relx=0.5, rely=0.5, anchor=tk.CENTER, width=860, height=660)
         self.main_frame = main_frame
         
-        # Заголовок
         title_frame = tk.Frame(main_frame, bg=COLORS['bg2'], height=80)
         title_frame.pack(fill=tk.X, padx=0, pady=0)
         title_frame.pack_propagate(False)
@@ -976,7 +987,6 @@ class InsultApp:
         tk.Label(title_inner, text=f"🔥 {APP_NAME}", font=("Segoe UI", 26, "bold"), bg=COLORS['bg2'], fg=COLORS['gold']).pack(side=tk.LEFT)
         tk.Label(title_inner, text=CREATOR_TEXT, font=("Segoe UI", 10), bg=COLORS['bg2'], fg=COLORS['neon_orange']).pack(side=tk.RIGHT)
         
-        # Верхняя панель
         top_frame = tk.Frame(main_frame, bg=COLORS['bg'])
         top_frame.pack(fill=tk.X, padx=0, pady=5)
         
@@ -989,7 +999,6 @@ class InsultApp:
         self.logout_btn = GlowButton(top_frame, text="🚪 ВЫЙТИ (F9)", command=self.logout, bg=COLORS['danger'], fg=COLORS['text'], font=("Segoe UI", 10, "bold"), padx=14, pady=5)
         self.logout_btn.pack(side=tk.RIGHT, padx=5)
         
-        # Статус
         stats_frame = tk.Frame(main_frame, bg=COLORS['bg'])
         stats_frame.pack(pady=5)
         self.status_label = tk.Label(stats_frame, text="⏸️ Ожидание...", bg=COLORS['bg'], fg=COLORS['warning'], font=("Segoe UI", 13, "bold"))
@@ -997,7 +1006,6 @@ class InsultApp:
         self.count_label = tk.Label(stats_frame, text="📨 0", bg=COLORS['bg'], fg=COLORS['neon'], font=("Segoe UI", 13, "bold"))
         self.count_label.pack(side=tk.LEFT, padx=10)
         
-        # Превью
         self.preview = scrolledtext.ScrolledText(main_frame, height=8, bg=COLORS['bg3'], fg=COLORS['text'], insertbackground='white', font=("Segoe UI", 10), relief=tk.FLAT, borderwidth=2, padx=15, pady=15)
         self.preview.pack(padx=10, pady=5, fill=tk.BOTH, expand=True)
         self.preview.insert("1.0", f"""🔥 {APP_NAME}
@@ -1017,7 +1025,6 @@ class InsultApp:
 ✅ {LOVE_TEXT}""")
         self.preview.config(state=tk.DISABLED)
         
-        # Кнопки
         btn_frame = tk.Frame(main_frame, bg=COLORS['bg'])
         btn_frame.pack(pady=8)
         self.start_btn = GlowButton(btn_frame, text="🤖 СТАРТ (F3)", command=self.start_spam, bg=COLORS['success'], fg=COLORS['text'], font=("Segoe UI", 10, "bold"), width=16, padx=5, pady=8)
@@ -1027,13 +1034,11 @@ class InsultApp:
         self.pause_btn = GlowButton(btn_frame, text="⏸️ ПАУЗА (F5)", command=self.toggle_pause, bg=COLORS['accent'], fg=COLORS['text'], font=("Segoe UI", 10, "bold"), width=16, padx=5, pady=8)
         self.pause_btn.pack(side=tk.LEFT, padx=5)
         
-        # Подвал
         bottom_frame = tk.Frame(main_frame, bg=COLORS['bg'])
         bottom_frame.pack(pady=5)
         tk.Label(bottom_frame, text="F3-СТАРТ | F4-СТОП | F5-ПАУЗА | F6-АДМИН | F9-ВЫХОД | F11-ПОЛНЫЙ ЭКРАН", bg=COLORS['bg'], fg=COLORS['text2'], font=("Segoe UI", 9)).pack()
         tk.Label(bottom_frame, text=LOVE_TEXT, bg=COLORS['bg'], fg=COLORS['pink'], font=("Segoe UI", 10, "bold")).pack()
         
-        # Админ-панель
         self.admin_panel = AdminPanel(self.root, self.is_admin)
         self.fullscreen = False
         
@@ -1177,7 +1182,6 @@ class AdminPanel:
         style.configure('TNotebook.Tab', background=COLORS['bg2'], foreground=COLORS['text'], padding=[20, 8], font=("Segoe UI", 10, "bold"))
         style.map('TNotebook.Tab', background=[('selected', COLORS['accent'])])
         
-        # Вкладки
         self.tab_main = tk.Frame(self.notebook, bg=COLORS['bg'])
         self.notebook.add(self.tab_main, text="📊 Главная")
         self.create_main_tab()
